@@ -317,12 +317,18 @@ jobs:
 
       - name: Configure pacman downloader and security
         run: |
-          # pkg.devkitpro.org returns HTTP 403 to default pacman user-agent on Cloudflare; use curl with custom User-Agent
+          # Create wrapper script so pacman XferCommand handles the browser User-Agent without argument-splitting bugs
+          cat << 'EOF' > /usr/local/bin/pacman-curl
+          #!/bin/sh
+          exec /usr/bin/curl -f -g -L --retry 3 --retry-delay 3 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -o "$1" "$2"
+          EOF
+          chmod +x /usr/local/bin/pacman-curl
+
           find /etc /opt/devkitpro -name "pacman.conf" 2>/dev/null | while read -r cfg; do
             echo "Patching $cfg"
-            sed -i 's|^#*XferCommand =.*|XferCommand = /usr/bin/curl -g -L -C - --retry 3 --retry-delay 3 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" -o %o %u|' "$cfg"
+            sed -i 's|^#*XferCommand =.*|XferCommand = /usr/local/bin/pacman-curl %o %u|' "$cfg"
             if ! grep -q "XferCommand" "$cfg"; then
-              sed -i '/\[options\]/a XferCommand = /usr/bin/curl -g -L -C - --retry 3 --retry-delay 3 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" -o %o %u' "$cfg"
+              sed -i '/\[options\]/a XferCommand = /usr/local/bin/pacman-curl %o %u' "$cfg"
             fi
             # DevkitPro PGP signatures can expire or fail validation in containers; disable signature verification
             sed -i 's|^#*SigLevel.*|SigLevel = Never|g' "$cfg"
