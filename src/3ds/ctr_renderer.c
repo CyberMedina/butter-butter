@@ -37,7 +37,7 @@ extern shaderProgram_s g_shaderProg;
 #define LINEAR_LOW            (3u * 1024u * 1024u)
 #define LINEAR_SAFE           (5u * 1024u * 1024u)
 #define CTR_PREFETCH_MIN_FREE (6u * 1024u * 1024u)
-#define CTR_PREFETCH_ROOM_BUDGET 4u
+#define CTR_PREFETCH_ROOM_BUDGET 12u
 #define DISPLAY_TRANSFER_FLAGS \
     (GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) | \
      GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) | \
@@ -56,6 +56,7 @@ extern shaderProgram_s g_shaderProg;
 #define MAX_GC_TARGETS 64
 static C3D_RenderTarget* g_gc_targets[MAX_GC_TARGETS];
 static int g_gc_target_count = 0;
+static int g_secondaryDrawnFrames = 0;
 
 // ---- Live theme + screen layout (driven by launcher) -----------------------
 
@@ -81,6 +82,7 @@ static struct {
 void CtrRenderer_setGameScreen(CtrGameScreen which) {
     if (which != CTR_GAME_SCREEN_TOP && which != CTR_GAME_SCREEN_BOTTOM) return;
     g_ctr_game_screen = which;
+    g_secondaryDrawnFrames = 0;
 }
 
 CtrGameScreen CtrRenderer_getGameScreen(void) { return g_ctr_game_screen; }
@@ -90,6 +92,7 @@ void CtrRenderer_setBackdropMode(CtrBackdropMode mode) {
     if (value < (int)CTR_BACKDROP_GRADIENT || value > (int)CTR_BACKDROP_STRETCH)
         mode = CTR_BACKDROP_GRADIENT;
     g_ctr_backdrop_mode = mode;
+    g_secondaryDrawnFrames = 0;
 }
 
 CtrBackdropMode CtrRenderer_getBackdropMode(void) { return g_ctr_backdrop_mode; }
@@ -130,6 +133,7 @@ void CtrRenderer_setLetterboxTheme(float topR, float topG, float topB,
     if (particleAlpha < 0.f) particleAlpha = 0.f;
     g_letterbox.blurAlpha = blurAlpha;
     g_letterbox.particleAlpha = particleAlpha;
+    g_secondaryDrawnFrames = 0;
 }
 
 C3D_RenderTarget *CtrRenderer_getTopTarget(Renderer *ren) {
@@ -214,6 +218,7 @@ void CtrRenderer_setCacheProgressCallback(CtrRendererCacheProgressFn callback, v
 void CtrRenderer_resetSessionState(void) {
     CtrRenderer_setCacheProgressCallback(NULL, NULL);
     g_frame = 0;
+    g_secondaryDrawnFrames = 0;
 }
 
 static inline uint16_t pack_rgba4444(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
@@ -2149,7 +2154,8 @@ static void ctr_end_frame(Renderer *ren) {
         int primaryH = 240;
         int secondaryW = (g_ctr_game_screen == CTR_GAME_SCREEN_BOTTOM) ? 400 : 320;
 
-        if (secondary) {
+        bool secondaryNeedsRedraw = (g_letterbox.particleAlpha > 0.001f) || (g_secondaryDrawnFrames < 2);
+        if (secondary && secondaryNeedsRedraw) {
             C3D_FrameDrawOn(secondary);
             ctx->activeTarget = secondary;
             rebind_state(ctx);
@@ -2170,6 +2176,7 @@ static void ctr_end_frame(Renderer *ren) {
             ctx->winW = savedWinW;
             ctx->winH = savedWinH;
             flush_batch(ctx);
+            g_secondaryDrawnFrames++;
         }
 
         if (primary) {

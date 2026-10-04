@@ -894,11 +894,18 @@ void Runner_draw(Runner* runner) {
                         RoomTile* tile = &data->legacyTiles[j];
                         RuntimeLayerElement* tileEl = nullptr;
                         if (runner->gameProfile == GAME_PROFILE_DELTARUNE) {
-                            repeat(tileElementCount, k) {
-                                RuntimeLayerElement* candidate = &runtimeLayer->elements[k];
-                                if (candidate->type == RuntimeLayerElementType_Tile && candidate->tileElement == tile) {
-                                    tileEl = candidate;
-                                    break;
+                            size_t expectedIdx = (size_t)data->spriteCount + (size_t)j;
+                            if (expectedIdx < tileElementCount &&
+                                runtimeLayer->elements[expectedIdx].type == RuntimeLayerElementType_Tile &&
+                                runtimeLayer->elements[expectedIdx].tileElement == tile) {
+                                tileEl = &runtimeLayer->elements[expectedIdx];
+                            } else {
+                                repeat(tileElementCount, k) {
+                                    RuntimeLayerElement* candidate = &runtimeLayer->elements[k];
+                                    if (candidate->type == RuntimeLayerElementType_Tile && candidate->tileElement == tile) {
+                                        tileEl = candidate;
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -1473,7 +1480,15 @@ static uint32_t Runner_prefetchInstanceSprites(Runner* runner, Instance* inst) {
     }
 
     DataWin* dataWin = runner->dataWin;
-    bool* seen = calloc(dataWin->sprt.count ? dataWin->sprt.count : 1, sizeof(bool));
+    static bool* s_seenSprites = nullptr;
+    static size_t s_seenSpritesCap = 0;
+    size_t neededCap = dataWin->sprt.count ? dataWin->sprt.count : 1;
+    if (neededCap > s_seenSpritesCap) {
+        s_seenSprites = (bool*) safeRealloc(s_seenSprites, neededCap * sizeof(bool));
+        memset(s_seenSprites + s_seenSpritesCap, 0, (neededCap - s_seenSpritesCap) * sizeof(bool));
+        s_seenSpritesCap = neededCap;
+    }
+    bool* seen = s_seenSprites;
     int32_t* spriteQueue = nullptr;
 
     queueSpriteIndexOnce(dataWin, seen, &spriteQueue, inst->spriteIndex);
@@ -1531,8 +1546,15 @@ static uint32_t Runner_prefetchInstanceSprites(Runner* runner, Instance* inst) {
         }
     }
 
+    // Reset seen flags in scratchpad for queued sprites
+    repeat(prefetchedCount, i) {
+        int32_t spr = spriteQueue[i];
+        if (spr >= 0 && (size_t)spr < s_seenSpritesCap) seen[spr] = false;
+    }
+    if (inst->spriteIndex >= 0 && (size_t)inst->spriteIndex < s_seenSpritesCap) seen[inst->spriteIndex] = false;
+    if (inst->maskIndex >= 0 && (size_t)inst->maskIndex < s_seenSpritesCap) seen[inst->maskIndex] = false;
+
     arrfree(spriteQueue);
-    free(seen);
     return prefetchedCount;
 }
 
@@ -2131,10 +2153,10 @@ Runner* Runner_create(DataWin* dataWin, VMContext* vm, Renderer* renderer, FileS
     // Link runner to VM context
     vm->runner = (struct Runner*) runner;
 
-    // Native script overrides are game-specific. Keep Undertale's optimized
-    // handlers from leaking into Deltarune when returning through the launcher.
+    // Native script overrides
     NativeScripts_reset();
-    if (runner->gameProfile == GAME_PROFILE_UNDERTALE) {
+    if (runner->gameProfile == GAME_PROFILE_UNDERTALE ||
+        runner->gameProfile == GAME_PROFILE_DELTARUNE) {
         NativeScripts_init(vm, runner);
     }
 
