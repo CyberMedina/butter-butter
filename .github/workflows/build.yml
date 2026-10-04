@@ -321,18 +321,22 @@ jobs:
           dkp-pacman -S --needed --noconfirm \
             3ds-dev \
             3ds-cmake \
-            3ds-makerom \
-            3ds-bannertool \
             3ds-sdl \
             3ds-sdl_mixer \
             3ds-libmad \
             3ds-libvorbisidec \
             3ds-libogg \
-            3ds-libmikmod \
             3ds-bzip2
+
+      - name: Verify 3DS tools
+        run: |
+          export PATH="/opt/devkitpro/tools/bin:$PATH"
+          command -v makerom || command -v 3ds-makerom || { echo "::error::makerom is not available"; exit 1; }
+          command -v bannertool || command -v 3ds-bannertool || { echo "::error::bannertool is not available"; exit 1; }
 
       - name: Configure
         run: |
+          export PATH="/opt/devkitpro/tools/bin:$PATH"
           cmake -B build-3ds \
             -DCMAKE_TOOLCHAIN_FILE=/opt/devkitpro/cmake/3DS.cmake \
             -DPLATFORM=3ds \
@@ -342,6 +346,7 @@ jobs:
 
       - name: Build 3DSX and CIA
         run: |
+          export PATH="/opt/devkitpro/tools/bin:$PATH"
           cmake --build build-3ds --target butterscotch_3dsx
           cmake --build build-3ds --target butterscotch_cia
 

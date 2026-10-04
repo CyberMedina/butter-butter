@@ -466,13 +466,20 @@ elseif(PLATFORM STREQUAL "3ds")
         )
     endif()
 
+    find_library(LIBMIKMOD mikmod HINTS "$ENV{DEVKITPRO}/portlibs/3ds/lib")
+    if(LIBMIKMOD)
+        set(OPTIONAL_MIKMOD mikmod)
+    else()
+        set(OPTIONAL_MIKMOD "")
+    endif()
+
     target_link_libraries(butterscotch
         SDL_mixer
         stdc++
         mad
         vorbisidec
         ogg
-        mikmod
+        ${OPTIONAL_MIKMOD}
         SDL
         citro3d
         ctru
