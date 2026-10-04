@@ -315,7 +315,7 @@ jobs:
           echo "hash=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           echo "date=$(git log -1 --format=%cd --date=format:'%Y-%m-%d %H:%M:%S')" >> $GITHUB_OUTPUT
 
-      - name: Configure pacman downloader
+      - name: Configure pacman downloader and security
         run: |
           # pkg.devkitpro.org returns HTTP 403 to default pacman user-agent on Cloudflare; use curl with custom User-Agent
           find /etc /opt/devkitpro -name "pacman.conf" 2>/dev/null | while read -r cfg; do
@@ -324,6 +324,9 @@ jobs:
             if ! grep -q "XferCommand" "$cfg"; then
               sed -i '/\[options\]/a XferCommand = /usr/bin/curl -g -L -C - --retry 3 --retry-delay 3 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" -o %o %u' "$cfg"
             fi
+            # DevkitPro PGP signatures can expire or fail validation in containers; disable signature verification
+            sed -i 's|^#*SigLevel.*|SigLevel = Never|g' "$cfg"
+            sed -i 's|^#*LocalFileSigLevel.*|LocalFileSigLevel = Never|g' "$cfg"
           done
 
       - name: Install 3DS dependencies
