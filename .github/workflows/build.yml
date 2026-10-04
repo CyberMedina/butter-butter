@@ -315,50 +315,20 @@ jobs:
           echo "hash=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           echo "date=$(git log -1 --format=%cd --date=format:'%Y-%m-%d %H:%M:%S')" >> $GITHUB_OUTPUT
 
-      - name: Configure pacman downloader and security
+      - name: Install 3DS dependencies (offline portlibs)
         run: |
-          # Create wrapper script so pacman XferCommand handles the browser User-Agent without argument-splitting bugs
-          cat << 'EOF' > /usr/local/bin/pacman-curl
-          #!/bin/sh
-          exec /usr/bin/curl -f -g -L --retry 3 --retry-delay 3 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -o "$1" "$2"
-          EOF
-          chmod +x /usr/local/bin/pacman-curl
-
           find /etc /opt/devkitpro -name "pacman.conf" 2>/dev/null | while read -r cfg; do
-            echo "Patching $cfg"
-            sed -i 's|^#*XferCommand =.*|XferCommand = /usr/local/bin/pacman-curl %o %u|' "$cfg"
-            if ! grep -q "XferCommand" "$cfg"; then
-              sed -i '/\[options\]/a XferCommand = /usr/local/bin/pacman-curl %o %u' "$cfg"
-            fi
-            # DevkitPro PGP signatures can expire or fail validation in containers; disable signature verification
             sed -i 's|^#*SigLevel.*|SigLevel = Never|g' "$cfg"
             sed -i 's|^#*LocalFileSigLevel.*|LocalFileSigLevel = Never|g' "$cfg"
           done
+          dkp-pacman -U --noconfirm tools-local/packages/*.pkg.tar.*
 
-      - name: Install 3DS dependencies
-        run: |
-          dkp-pacman -Syy --noconfirm
-          dkp-pacman -S --needed --noconfirm \
-            3ds-cmake \
-            3ds-sdl \
-            3ds-sdl_mixer \
-            3ds-libmad \
-            3ds-libvorbisidec \
-            3ds-libogg \
-            3ds-bzip2 \
-            3ds-mikmod
-
-      - name: Install makerom and bannertool
+      - name: Setup makerom and bannertool
         run: |
           mkdir -p /opt/devkitpro/tools/bin
-          curl -fsSL -o /tmp/makerom.zip https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip
-          unzip -q -o /tmp/makerom.zip -d /tmp/makerom
-          install -m 755 /tmp/makerom/makerom /opt/devkitpro/tools/bin/makerom
-
-          curl -fsSL -o /tmp/bannertool.zip https://github.com/Epicpkmn11/bannertool/releases/download/v1.2.2/bannertool.zip
-          unzip -q -o /tmp/bannertool.zip -d /tmp/bannertool
-          install -m 755 /tmp/bannertool/linux-x86_64/bannertool /opt/devkitpro/tools/bin/bannertool
-
+          cp tools-local/bin/makerom /opt/devkitpro/tools/bin/makerom
+          cp tools-local/bin/bannertool /opt/devkitpro/tools/bin/bannertool
+          chmod +x /opt/devkitpro/tools/bin/makerom /opt/devkitpro/tools/bin/bannertool
           echo "/opt/devkitpro/tools/bin" >> $GITHUB_PATH
 
       - name: Verify 3DS tools
