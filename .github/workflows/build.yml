@@ -364,7 +364,7 @@ jobs:
             "-DBUTTERSCOTCH_COMMIT_DATE=${{ steps.commit-info.outputs.date }}" \
             "-DAUTOBOOT_DATA_PATH=sdmc:/3ds/butterscotch/deltarune/data.win" \
             "-DAPP_TITLE=DELTARUNE" \
-            "-DAPP_DESCRIPTION=DELTARUNE Chapter 1 & 2" \
+            "-DAPP_DESCRIPTION=DELTARUNE Chapter 1 and 2" \
             "-DAPP_AUTHOR=Toby Fox" \
             "-DAPP_PRODUCT_CODE=CTR-P-BDTR" \
             "-DAPP_UNIQUE_ID=0xED7A1" \
