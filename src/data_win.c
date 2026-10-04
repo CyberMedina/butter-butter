@@ -1,5 +1,6 @@
 #include "data_win.h"
 #include "binary_reader.h"
+#include "binary_utils.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -15,9 +16,22 @@
 #include <3ds.h>
 #define DW_BIG_ALLOC(sz) linearAlloc(sz)
 #define DW_BIG_FREE(ptr) do { if ((ptr) != nullptr) linearFree(ptr); } while (0)
-#else
+#define DATAWIN_GET_TICKS_MS() (uint64_t)osGetTime()
+#elif defined(_WIN32)
+#include <windows.h>
 #define DW_BIG_ALLOC(sz) malloc(sz)
 #define DW_BIG_FREE(ptr) free(ptr)
+#define DATAWIN_GET_TICKS_MS() (uint64_t)GetTickCount64()
+#else
+#include <time.h>
+static inline uint64_t datawin_get_ticks_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+#define DW_BIG_ALLOC(sz) malloc(sz)
+#define DW_BIG_FREE(ptr) free(ptr)
+#define DATAWIN_GET_TICKS_MS() datawin_get_ticks_ms()
 #endif
 
 // ===[ HELPERS ]===
@@ -1871,10 +1885,11 @@ static bool tryLoadCodeCache(DataWin* dw, const char* cachePath) {
         return false;
     }
 
+    bool mtimeMatches = (srcSt.st_mtime == 0 || hdr.srcMtime == 0 || hdr.srcMtime == (uint64_t) srcSt.st_mtime);
     if (memcmp(hdr.magic, CODE_CACHE_MAGIC, 4) != 0 ||
         hdr.version != CODE_CACHE_VERSION ||
         hdr.srcSize != (uint64_t) srcSt.st_size ||
-        hdr.srcMtime != (uint64_t) srcSt.st_mtime) {
+        !mtimeMatches) {
         fclose(f);
         return false;
     }
@@ -2294,28 +2309,185 @@ static void parseTXTR(BinaryReader* reader, DataWin* dw, size_t chunkEnd, DataWi
     }
 }
 
+#define AUDO_CACHE_MAGIC "AUD1"
+#define AUDO_CACHE_VERSION 1u
+
+#pragma pack(push, 1)
+typedef struct {
+    char magic[4];
+    uint32_t version;
+    uint64_t srcSize;
+    uint64_t srcMtime;
+    uint32_t count;
+    uint32_t reserved;
+} AudoCacheHeader;
+
+typedef struct {
+    uint32_t dataSize;
+    uint32_t dataOffset;
+} AudoCacheEntry;
+#pragma pack(pop)
+
+static bool tryLoadAudoCache(DataWin* dw, const char* cachePath) {
+    if (cachePath == nullptr || dw->filePath == nullptr) return false;
+
+    struct stat srcSt;
+    if (stat(dw->filePath, &srcSt) != 0) return false;
+
+    FILE* f = fopen(cachePath, "rb");
+    if (f == nullptr) return false;
+    setvbuf(f, nullptr, _IOFBF, 64 * 1024);
+
+    AudoCacheHeader hdr;
+    if (fread(&hdr, sizeof(hdr), 1, f) != 1) {
+        fclose(f);
+        return false;
+    }
+
+    bool mtimeMatches = (srcSt.st_mtime == 0 || hdr.srcMtime == 0 || hdr.srcMtime == (uint64_t) srcSt.st_mtime);
+    if (memcmp(hdr.magic, AUDO_CACHE_MAGIC, 4) != 0 ||
+        hdr.version != AUDO_CACHE_VERSION ||
+        hdr.srcSize != (uint64_t) srcSt.st_size ||
+        !mtimeMatches) {
+        fclose(f);
+        return false;
+    }
+
+    if (hdr.count == 0) {
+        fclose(f);
+        dw->audo.count = 0;
+        dw->audo.entries = nullptr;
+        return true;
+    }
+
+    AudoCacheEntry* raw = safeMalloc(hdr.count * sizeof(AudoCacheEntry));
+    if (fread(raw, sizeof(AudoCacheEntry), hdr.count, f) != hdr.count) {
+        free(raw);
+        fclose(f);
+        return false;
+    }
+    fclose(f);
+
+    AudioEntry* entries = safeMalloc(hdr.count * sizeof(AudioEntry));
+    repeat(hdr.count, i) {
+        entries[i].dataSize = raw[i].dataSize;
+        entries[i].dataOffset = raw[i].dataOffset;
+        entries[i].data = nullptr;
+    }
+    free(raw);
+
+    dw->audo.count = hdr.count;
+    dw->audo.entries = entries;
+    fprintf(stderr, "[audo] loaded %u entries from cache (%s)\n", (unsigned)hdr.count, cachePath);
+    return true;
+}
+
+static void writeAudoCache(DataWin* dw, const char* cachePath) {
+    if (cachePath == nullptr || dw->filePath == nullptr) return;
+
+    struct stat srcSt;
+    if (stat(dw->filePath, &srcSt) != 0) return;
+
+    FILE* f = fopen(cachePath, "wb");
+    if (f == nullptr) return;
+    setvbuf(f, nullptr, _IOFBF, 64 * 1024);
+
+    AudoCacheHeader hdr = {0};
+    memcpy(hdr.magic, AUDO_CACHE_MAGIC, 4);
+    hdr.version = AUDO_CACHE_VERSION;
+    hdr.srcSize = (uint64_t) srcSt.st_size;
+    hdr.srcMtime = (uint64_t) srcSt.st_mtime;
+    hdr.count = dw->audo.count;
+
+    if (fwrite(&hdr, sizeof(hdr), 1, f) != 1) {
+        fclose(f);
+        return;
+    }
+
+    if (dw->audo.count > 0 && dw->audo.entries != nullptr) {
+        AudoCacheEntry* raw = safeMalloc(dw->audo.count * sizeof(AudoCacheEntry));
+        repeat(dw->audo.count, i) {
+            raw[i].dataSize = dw->audo.entries[i].dataSize;
+            raw[i].dataOffset = dw->audo.entries[i].dataOffset;
+        }
+        size_t wrote = fwrite(raw, sizeof(AudoCacheEntry), dw->audo.count, f);
+        free(raw);
+        if (wrote != dw->audo.count) {
+            fclose(f);
+            return;
+        }
+    }
+
+    fclose(f);
+    fprintf(stderr, "[audo] wrote %u entries to cache (%s)\n", (unsigned)dw->audo.count, cachePath);
+}
+
 static void parseAUDO(BinaryReader* reader, DataWin* dw, DataWinParserOptions options) {
+    if (options.skipAudioBlobData && tryLoadAudoCache(dw, options.audoCachePath)) {
+        return;
+    }
+
     Audo* a = &dw->audo;
 
     uint32_t count;
     uint32_t* ptrs = readPointerTable(reader, &count);
     a->count = count;
 
-    if (count == 0) { free(ptrs); a->entries = nullptr; return; }
+    if (count == 0) {
+        free(ptrs);
+        a->entries = nullptr;
+        if (options.skipAudioBlobData) {
+            writeAudoCache(dw, options.audoCachePath);
+        }
+        return;
+    }
 
     a->entries = safeMalloc(count * sizeof(AudioEntry));
-    repeat(count, i) {
-        BinaryReader_seek(reader, ptrs[i]);
-        a->entries[i].dataSize = BinaryReader_readUint32(reader);
-        a->entries[i].dataOffset = (uint32_t)BinaryReader_getPosition(reader);
-        if (!options.skipAudioBlobData && a->entries[i].dataSize > 0) {
-            a->entries[i].data = safeMalloc(a->entries[i].dataSize);
-            BinaryReader_readBytes(reader, a->entries[i].data, a->entries[i].dataSize);
-        } else {
-            a->entries[i].data = nullptr;
+
+    // Fast path for metadata-only parsing:
+    // If skipAudioBlobData is enabled and the main reader has no in-RAM chunk buffer
+    // (typical for chunks > 8MB), reading via BinaryReader_seek flushes and re-reads
+    // the 128KB stdio buffer from the slow SD card on every entry.
+    // Instead, open an unbuffered handle (_IONBF) to read just the 4-byte size headers.
+    FILE* fastFile = nullptr;
+    if (options.skipAudioBlobData && reader->buffer == nullptr && dw->filePath != nullptr) {
+        fastFile = fopen(dw->filePath, "rb");
+        if (fastFile) {
+            setvbuf(fastFile, nullptr, _IONBF, 0);
         }
     }
+
+    repeat(count, i) {
+        if (fastFile) {
+            fseek(fastFile, (long) ptrs[i], SEEK_SET);
+            uint32_t dataSize = 0;
+            if (fread(&dataSize, sizeof(uint32_t), 1, fastFile) != 1) {
+                dataSize = 0;
+            }
+            a->entries[i].dataSize = BinaryUtils_toLittle32(dataSize);
+            a->entries[i].dataOffset = ptrs[i] + 4;
+            a->entries[i].data = nullptr;
+        } else {
+            BinaryReader_seek(reader, ptrs[i]);
+            a->entries[i].dataSize = BinaryReader_readUint32(reader);
+            a->entries[i].dataOffset = (uint32_t)BinaryReader_getPosition(reader);
+            if (!options.skipAudioBlobData && a->entries[i].dataSize > 0) {
+                a->entries[i].data = safeMalloc(a->entries[i].dataSize);
+                BinaryReader_readBytes(reader, a->entries[i].data, a->entries[i].dataSize);
+            } else {
+                a->entries[i].data = nullptr;
+            }
+        }
+    }
+
+    if (fastFile) {
+        fclose(fastFile);
+    }
     free(ptrs);
+
+    if (options.skipAudioBlobData) {
+        writeAudoCache(dw, options.audoCachePath);
+    }
 }
 
 // ===[ MAIN PARSE FUNCTION ]===
@@ -2475,6 +2647,8 @@ DataWin* DataWin_parse(const char* filePath, DataWinParserOptions options) {
             BinaryReader_setBufferContext(&reader, chunkName);
         }
 
+        uint64_t chunkStartTicks = DATAWIN_GET_TICKS_MS();
+
         if (options.parseGen8 && memcmp(chunkName, "GEN8", 4) == 0) {
             parseGEN8(&reader, dw);
         } else if (options.parseOptn && memcmp(chunkName, "OPTN", 4) == 0) {
@@ -2541,6 +2715,13 @@ DataWin* DataWin_parse(const char* filePath, DataWinParserOptions options) {
             parseAUDO(&reader, dw, options);
         } else {
             printf("Unknown chunk: %.4s (length %u at offset 0x%zX)\n", chunkName, chunkLength, chunkDataStart - 8);
+        }
+
+        if (shouldParse) {
+            uint64_t chunkDurationMs = DATAWIN_GET_TICKS_MS() - chunkStartTicks;
+            if (chunkDurationMs >= 10) {
+                fprintf(stderr, "[TIMING] Chunk %.4s parsed in %llu ms\n", chunkName, (unsigned long long)chunkDurationMs);
+            }
         }
 
         // Free the chunk buffer and revert to FILE*-based reads for the next header

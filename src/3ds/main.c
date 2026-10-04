@@ -462,6 +462,9 @@ int main(int argc, char **argv) {
         char code_cache_path[256];
         snprintf(code_cache_path, sizeof(code_cache_path), "%s/code.cache", g_current_cache_dir);
 
+        char audo_cache_path[256];
+        snprintf(audo_cache_path, sizeof(audo_cache_path), "%s/audo.cache", g_current_cache_dir);
+
         char cache_flag_path[256];
         snprintf(cache_flag_path, sizeof(cache_flag_path), "%s/%s", g_current_cache_dir, CTR_TEXTURE_CACHE_READY_FLAG);
         char atlas_index_path[256];
@@ -542,6 +545,7 @@ int main(int argc, char **argv) {
 
             .lazyLoadRooms=1,
             .codeCachePath=code_cache_path,
+            .audoCachePath=audo_cache_path,
             .progressCallback = gfx_ready ? datawin_progress_cb : NULL,
             .progressCallbackUserData = &fullParseState
         };

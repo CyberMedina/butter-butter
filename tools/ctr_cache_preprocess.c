@@ -89,6 +89,12 @@ static int process_one(const char *dataWinPath, const char *cacheDir, const char
     }
     snprintf(g_current_cache_dir, sizeof(g_current_cache_dir), "%s", cacheDir);
 
+    char codeCachePath[512];
+    join_path(codeCachePath, sizeof(codeCachePath), cacheDir, "code.cache");
+
+    char audoCachePath[512];
+    join_path(audoCachePath, sizeof(audoCachePath), cacheDir, "audo.cache");
+
     DataWinParserOptions opt = {
         .parseGen8 = true,
         .parseSprt = true,
@@ -97,6 +103,10 @@ static int process_one(const char *dataWinPath, const char *cacheDir, const char
         .parseTpag = true,
         .parseTxtr = true,
         .parseStrg = true,
+        .parseCode = true,
+        .codeCachePath = codeCachePath,
+        .parseAudo = true,
+        .audoCachePath = audoCachePath,
         .skipLoadingPreciseMasksForNonPreciseSprites = true,
         .skipTextureBlobData = false,
         .skipAudioBlobData = true,
@@ -118,13 +128,44 @@ static int process_one(const char *dataWinPath, const char *cacheDir, const char
     bool ok = CtrTextureCache_indexIsCurrentPath(atlasPath);
     DataWin_free(dw);
 
+    // Pre-cache all audiogroupN.dat files found alongside data.win
+    char gameDir[512];
+    dirname_of(dataWinPath, gameDir, sizeof(gameDir));
+
+    DIR *d = opendir(gameDir);
+    if (d) {
+        struct dirent *ent;
+        while ((ent = readdir(d)) != NULL) {
+            const char *name = ent->d_name;
+            int grp = 0;
+            if (sscanf(name, "audiogroup%d.dat", &grp) == 1) {
+                char agPath[640];
+                join_path(agPath, sizeof(agPath), gameDir, name);
+                char agCachePath[640];
+                char agCacheName[64];
+                snprintf(agCacheName, sizeof(agCacheName), "audiogroup%d.cache", grp);
+                join_path(agCachePath, sizeof(agCachePath), cacheDir, agCacheName);
+
+                fprintf(stderr, "[%s] caching %s -> %s\n", label, name, agCacheName);
+                DataWinParserOptions agOpt = {
+                    .parseAudo = true,
+                    .skipAudioBlobData = true,
+                    .audoCachePath = agCachePath,
+                };
+                DataWin *agDw = DataWin_parse(agPath, agOpt);
+                if (agDw) DataWin_free(agDw);
+            }
+        }
+        closedir(d);
+    }
+
     if (!ok) {
         fprintf(stderr, "[%s] cache build failed or produced stale atlas: %s\n",
                 label, atlasPath);
         return 1;
     }
 
-    fprintf(stderr, "[%s] ready: %s\n", label, atlasPath);
+    fprintf(stderr, "[%s] ready: %s (textures, code, and audo cached)\n", label, atlasPath);
     return 0;
 }
 

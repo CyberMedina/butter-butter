@@ -1595,9 +1595,25 @@ static void sys_grp_load(AudioSystem *sys, int32_t grp) {
         return;
     }
 
+    char cache_path[320];
+    char dir[256];
+    const char *lastSlash = strrchr(path, '/');
+    const char *lastBack = strrchr(path, '\\');
+    if (!lastSlash || (lastBack && lastBack > lastSlash)) lastSlash = lastBack;
+    if (lastSlash) {
+        size_t dirlen = (size_t)(lastSlash - path);
+        if (dirlen >= sizeof(dir)) dirlen = sizeof(dir) - 1;
+        memcpy(dir, path, dirlen);
+        dir[dirlen] = '\0';
+        snprintf(cache_path, sizeof(cache_path), "%s/cache/audiogroup%d.cache", dir, (int) grp);
+    } else {
+        snprintf(cache_path, sizeof(cache_path), "cache/audiogroup%d.cache", (int) grp);
+    }
+
     DataWinParserOptions opt = (DataWinParserOptions) {
         .parseAudo = 1,
         .skipAudioBlobData = 1,
+        .audoCachePath = cache_path,
     };
     DataWin *gw = DataWin_parse(path, opt);
     if (!gw) {

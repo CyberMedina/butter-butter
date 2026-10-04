@@ -48,6 +48,7 @@ typedef struct {
     bool skipTextureBlobData;
     bool skipAudioBlobData;
     const char* codeCachePath;
+    const char* audoCachePath;
 
     // Optional progress callback, called before each chunk is parsed.
     // chunkName: 4-character chunk name (e.g. "GEN8", "SPRT")
