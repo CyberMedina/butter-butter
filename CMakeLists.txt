@@ -530,8 +530,8 @@ elseif(PLATFORM STREQUAL "3ds")
         set(BANNER_AUDIO "${CMAKE_SOURCE_DIR}/3ds/efimandreev0.wav")
     endif()
 
-    find_program(BANNERTOOL NAMES bannertool HINTS "${CMAKE_SOURCE_DIR}/tools-local/bin" "$ENV{DEVKITPRO}/tools/bin")
-    find_program(MAKEROM NAMES makerom HINTS "${CMAKE_SOURCE_DIR}/tools-local/bin" "$ENV{DEVKITPRO}/tools/bin")
+    find_program(BANNERTOOL NAMES bannertool 3ds-bannertool HINTS "${CMAKE_SOURCE_DIR}/tools-local/bin" "$ENV{DEVKITPRO}/tools/bin")
+    find_program(MAKEROM NAMES makerom 3ds-makerom HINTS "${CMAKE_SOURCE_DIR}/tools-local/bin" "$ENV{DEVKITPRO}/tools/bin")
 
     if(BANNERTOOL AND MAKEROM)
         add_custom_command(

@@ -317,7 +317,19 @@ jobs:
 
       - name: Install 3DS dependencies
         run: |
-          dkp-pacman -Syu --noconfirm 3ds-dev 3ds-cmake makerom bannertool picasso libctru citro3d citro2d
+          dkp-pacman -Sy --noconfirm
+          dkp-pacman -S --needed --noconfirm \
+            3ds-dev \
+            3ds-cmake \
+            3ds-makerom \
+            3ds-bannertool \
+            3ds-sdl \
+            3ds-sdl_mixer \
+            3ds-libmad \
+            3ds-libvorbisidec \
+            3ds-libogg \
+            3ds-libmikmod \
+            3ds-bzip2
 
       - name: Configure
         run: |
