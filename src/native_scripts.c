@@ -17175,6 +17175,17 @@ void NativeScripts_init(VMContext *ctx, Runner *runner) {
 
     NativeScripts_reset();
 
+    if (runner != NULL && runner->gameProfile == GAME_PROFILE_DELTARUNE) {
+        initTeacupDrawCache(dw);
+        registerNative("gml_Object_obj_teacup_Draw_0", native_deltarune_teacup_Draw0);
+        fprintf(stderr, "NativeScripts: Registered %d Deltarune native code overrides\n", (int32_t) shlen(nativeOverrideMap));
+        return;
+    }
+
+    if (runner != NULL && runner->gameProfile != GAME_PROFILE_UNDERTALE) {
+        return;
+    }
+
     initWriterCache(ctx, dw);
     initMinihelixCache(dw);
     initBltParentCache(ctx);
@@ -17307,11 +17318,7 @@ void NativeScripts_init(VMContext *ctx, Runner *runner) {
     initSteamplume2Cache(dw);
     initMettnewsPartCache(dw);
     initSnowfloorCache(ctx, dw);
-    if (runner != NULL && runner->gameProfile == GAME_PROFILE_DELTARUNE) {
-        initTeacupDrawCache(dw);
-    } else {
-        teacupDrawCache.ready = false;
-    }
+    teacupDrawCache.ready = false;
 
 
     VMBuiltins_register("scr_gettext", native_scr_gettext);
@@ -17603,10 +17610,6 @@ void NativeScripts_init(VMContext *ctx, Runner *runner) {
     registerNative("gml_Object_obj_time_Draw_77", native_time_Draw77);
     registerNative("gml_Object_obj_time_Draw_64", native_noop);
     registerNative("gml_Object_obj_time_Draw_75", native_noop);
-
-    if (runner != NULL && runner->gameProfile == GAME_PROFILE_DELTARUNE) {
-        registerNative("gml_Object_obj_teacup_Draw_0", native_deltarune_teacup_Draw0);
-    }
 
     fprintf(stderr, "NativeScripts: Registered %d native code overrides\n", (int32_t) shlen(nativeOverrideMap));
 }
