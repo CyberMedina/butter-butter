@@ -319,6 +319,7 @@ jobs:
         run: |
           dkp-pacman -Sy --noconfirm
           dkp-pacman -S --needed --noconfirm \
+            3ds-tools \
             3ds-dev \
             3ds-cmake \
             3ds-sdl \
@@ -327,6 +328,7 @@ jobs:
             3ds-libvorbisidec \
             3ds-libogg \
             3ds-bzip2
+          echo "/opt/devkitpro/tools/bin" >> $GITHUB_PATH
 
       - name: Verify 3DS tools
         run: |
