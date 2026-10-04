@@ -349,17 +349,41 @@ jobs:
             "-DBUTTERSCOTCH_COMMIT_HASH=${{ steps.commit-info.outputs.hash }}" \
             "-DBUTTERSCOTCH_COMMIT_DATE=${{ steps.commit-info.outputs.date }}"
 
-      - name: Build 3DSX and CIA
+      - name: Build 3DSX and CIA (Butterscotch & Deltarune)
         run: |
           export PATH="/opt/devkitpro/tools/bin:$PATH"
           cmake --build build-3ds --target butterscotch_3dsx
           cmake --build build-3ds --target butterscotch_cia
 
-      - name: Upload CIA artifact
+          # Build standalone DELTARUNE CIA (direct boot to chapter selection)
+          cmake -B build-deltarune \
+            -DCMAKE_TOOLCHAIN_FILE=/opt/devkitpro/cmake/3DS.cmake \
+            -DPLATFORM=3ds \
+            -DCMAKE_BUILD_TYPE=Release \
+            "-DBUTTERSCOTCH_COMMIT_HASH=${{ steps.commit-info.outputs.hash }}" \
+            "-DBUTTERSCOTCH_COMMIT_DATE=${{ steps.commit-info.outputs.date }}" \
+            "-DAUTOBOOT_DATA_PATH=sdmc:/3ds/butterscotch/deltarune/data.win" \
+            "-DAPP_TITLE=DELTARUNE" \
+            "-DAPP_DESCRIPTION=DELTARUNE Chapter 1 & 2" \
+            "-DAPP_AUTHOR=Toby Fox" \
+            "-DAPP_PRODUCT_CODE=CTR-P-BDTR" \
+            "-DAPP_UNIQUE_ID=0xED7A1" \
+            "-DAPP_ICON=${GITHUB_WORKSPACE}/3ds/deltarune/icon.png" \
+            "-DBANNER_IMAGE=${GITHUB_WORKSPACE}/3ds/deltarune/banner.png"
+          cmake --build build-deltarune --target butterscotch_cia
+          mv build-deltarune/butterscotch.cia build-deltarune/deltarune.cia
+
+      - name: Upload Butterscotch CIA artifact
         uses: actions/upload-artifact@v4
         with:
           name: butterscotch-3ds-cia
           path: build-3ds/butterscotch.cia
+
+      - name: Upload Deltarune Standalone CIA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deltarune-3ds-cia
+          path: build-deltarune/deltarune.cia
 
       - name: Upload 3DSX artifact
         uses: actions/upload-artifact@v4

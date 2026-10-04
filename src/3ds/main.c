@@ -417,6 +417,12 @@ int main(int argc, char **argv) {
         printf("[BOOT] SdlMixer_globalInit failed (audio disabled)\n");
     }
 
+#ifdef AUTOBOOT_DATA_PATH
+    printf("[BOOT] Autoboot configured: %s\n", AUTOBOOT_DATA_PATH);
+    strncpy(g_current_data_path, AUTOBOOT_DATA_PATH, 255);
+    g_current_data_path[255] = '\0';
+    apply_initial_launch_args_for_path(g_current_data_path);
+#else
     printf("[BOOT] Entering launcher_run_menu...\n");
     int selected_game = launcher_run_menu(&gfx);
     printf("[BOOT] launcher_run_menu returned: %d\n", selected_game);
@@ -441,6 +447,7 @@ int main(int argc, char **argv) {
     strncpy(g_current_data_path, launcher_game(selected_game)->path, 255);
     g_current_data_path[255] = '\0';
     apply_initial_launch_args_for_path(g_current_data_path);
+#endif
 
     bool keep_playing = true;
 
@@ -840,6 +847,11 @@ int main(int argc, char **argv) {
                         resolved, g_next_game_path);
                 fprintf(stderr, "[GAME_CHANGE] tip: place a sibling folder containing data.win next to '%s'\n",
                         g_current_data_path);
+#ifdef AUTOBOOT_DATA_PATH
+                g_game_change_requested = false;
+                clear_launch_args();
+                keep_playing = false;
+#else
                 g_game_change_requested = false;
                 clear_launch_args();
                 int new_selection = launcher_run_menu(&gfx);
@@ -850,8 +862,12 @@ int main(int argc, char **argv) {
                     g_current_data_path[255] = '\0';
                     apply_initial_launch_args_for_path(g_current_data_path);
                 }
+#endif
             }
         } else {
+#ifdef AUTOBOOT_DATA_PATH
+            keep_playing = false;
+#else
             int new_selection = launcher_run_menu(&gfx);
             if (new_selection < 0) {
                 keep_playing = false;
@@ -860,6 +876,7 @@ int main(int argc, char **argv) {
                 g_current_data_path[255] = '\0';
                 apply_initial_launch_args_for_path(g_current_data_path);
             }
+#endif
         }
     }
 
