@@ -34,9 +34,9 @@ extern shaderProgram_s g_shaderProg;
 #define REPACK_INDEX_FILE     "atlas.bin"
 #define MAX_RR_SEGMENTS       64
 #define MAX_RR_POINTS         (MAX_RR_SEGMENTS * 4 + 1)
-#define LINEAR_LOW            (6u * 1024u * 1024u)
-#define LINEAR_SAFE           (8u * 1024u * 1024u)
-#define CTR_PREFETCH_MIN_FREE (10u * 1024u * 1024u)
+#define LINEAR_LOW            (3u * 1024u * 1024u)
+#define LINEAR_SAFE           (5u * 1024u * 1024u)
+#define CTR_PREFETCH_MIN_FREE (6u * 1024u * 1024u)
 #define CTR_PREFETCH_ROOM_BUDGET 4u
 #define DISPLAY_TRANSFER_FLAGS \
     (GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) | \
@@ -3680,6 +3680,16 @@ static bool is_hot_font_name(const char *name) {
         "fnt_maintext",
         "fnt_comicsans",
         "fnt_papyrus",
+        "fnt_small",
+        "fnt_dotum",
+        "fnt_menu",
+        "fnt_tinysans",
+        "fnt_crypt",
+        "fnt_dialog",
+        "fnt_plain",
+        "fnt_sans",
+        "fnt_smallplain",
+        "fnt_battle",
         "fnt_ja_main",
         "fnt_ja_maintext",
         "fnt_ja_comicsans",
@@ -3743,6 +3753,16 @@ static void mark_deltarune_critical_sprites(CtrRenderer *ctx, DataWin *dw, const
         "spr_tensionbar_cutout",
         "spr_tensionmarker",
         "spr_tplogo",
+        "spr_dmenu_faces",
+        "spr_dialogbox",
+        "spr_dialogbox_dr",
+        "spr_face_susie0",
+        "spr_face_susie1",
+        "spr_face_ralsei0",
+        "spr_face_ralsei1",
+        "spr_face_kris0",
+        "spr_face_lancer0",
+        "spr_face_noelle0",
     };
     for (uint32_t i = 0; i < sizeof(tensionSprites) / sizeof(tensionSprites[0]); i++) {
         mark_sprite_by_name(ctx, dw, tensionSprites[i]);

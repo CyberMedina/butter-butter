@@ -375,7 +375,7 @@ int main(int argc, char **argv) {
     gfxSet3D(false);
 
     printf("[BOOT] Calling APT_SetAppCpuTimeLimit & osSetSpeedupEnable...\n");
-    APT_SetAppCpuTimeLimit(30);
+    APT_SetAppCpuTimeLimit(80);
     osSetSpeedupEnable(1);
 
     printf("[BOOT] Calling C3D_Init...\n");
@@ -815,7 +815,22 @@ int main(int argc, char **argv) {
             frameCounter++;
             logPerfSample(&perfFrameCount, &perfWindowStart);
 
-            while (osGetTime() - t_start < 33) gspWaitForVBlank();
+            u64 elapsedMs = osGetTime() - t_start;
+            if (elapsedMs < 33) {
+                // If more than 16ms remain (e.g. lightweight room took <16ms), wait 1 VBlank
+                // to align smoothly with display refresh.
+                if (elapsedMs < 16) {
+                    gspWaitForVBlank();
+                    elapsedMs = osGetTime() - t_start;
+                }
+                // Sleep for whatever sub-interval remains until 33ms without skipping to 50ms
+                if (elapsedMs < 33) {
+                    s64 sleepNs = (s64)(33 - elapsedMs) * 1000000LL;
+                    if (sleepNs > 0) {
+                        svcSleepThread(sleepNs);
+                    }
+                }
+            }
         }
 
         CtrRenderer_resetSessionState();
