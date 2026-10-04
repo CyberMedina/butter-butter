@@ -602,6 +602,10 @@ int main(int argc, char **argv) {
             u64 t_start = osGetTime();
             hidScanInput();
             u32 d = hidKeysDown(), u = hidKeysUp(), h = hidKeysHeld();
+            if ((h & KEY_L) && (h & KEY_R) && (d & KEY_SELECT)) {
+                CtrRenderer_toggleFpsOverlay();
+                continue;
+            }
 
             if ((h & KEY_L) && (h & KEY_R) && (h & KEY_A)) {
                 LauncherGfx pauseGfx;

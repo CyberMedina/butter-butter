@@ -115,6 +115,13 @@ void CtrRenderer_setAppFilterMode(CtrAppFilterMode mode) {
 
 CtrAppFilterMode CtrRenderer_getAppFilterMode(void) { return g_ctr_app_filter_mode; }
 
+static bool g_ctr_show_fps = true;
+
+void CtrRenderer_setFpsOverlay(bool enable) { g_ctr_show_fps = enable; }
+bool CtrRenderer_getFpsOverlay(void) { return g_ctr_show_fps; }
+void CtrRenderer_toggleFpsOverlay(void) { g_ctr_show_fps = !g_ctr_show_fps; }
+
+
 static void apply_app_filter(CtrRenderer *ctx) {
     if (!ctx || !ctx->appTex.data) return;
     GPU_TEXTURE_FILTER_PARAM filter =
@@ -2139,6 +2146,114 @@ static void ctr_begin_frame(Renderer *ren, int32_t gw, int32_t gh, int32_t ww, i
     ctx->surfaceDrawSuppressedDepth = 0;
 }
 
+static u64 s_fpsLastTime = 0;
+static int s_fpsFrameCounter = 0;
+static float s_fpsDisplayVal = 30.0f;
+
+static void draw_fps_overlay(CtrRenderer *ctx, int screenW, int screenH) {
+    (void)screenH;
+    u64 now = osGetTime();
+    s_fpsFrameCounter++;
+    if (s_fpsLastTime == 0) s_fpsLastTime = now;
+    u64 elapsed = now - s_fpsLastTime;
+    if (elapsed >= 500) {
+        s_fpsDisplayVal = (float)s_fpsFrameCounter * 1000.0f / (float)elapsed;
+        s_fpsFrameCounter = 0;
+        s_fpsLastTime = now;
+    }
+
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%.1f FPS", s_fpsDisplayVal);
+
+    float textCol[4];
+    if (s_fpsDisplayVal >= 28.0f) {
+        textCol[0] = 0.20f; textCol[1] = 0.95f; textCol[2] = 0.35f; textCol[3] = 1.0f;
+    } else if (s_fpsDisplayVal >= 20.0f) {
+        textCol[0] = 1.00f; textCol[1] = 0.85f; textCol[2] = 0.15f; textCol[3] = 1.0f;
+    } else {
+        textCol[0] = 1.00f; textCol[1] = 0.30f; textCol[2] = 0.30f; textCol[3] = 1.0f;
+    }
+
+    int textLen = (int)strlen(buf);
+    float textW = (float)(textLen * 6);
+    float boxW = textW + 8.f;
+    float boxH = 13.f;
+    float boxX = (float)screenW - boxW - 5.f;
+    float boxY = 5.f;
+
+    // Semi-transparent dark background pill
+    float bgCol[4] = {0.04f, 0.05f, 0.08f, 0.80f};
+    push_quad(ctx, &ctx->whiteTex,
+              boxX, boxY,
+              boxX + boxW, boxY,
+              boxX + boxW, boxY + boxH,
+              boxX, boxY + boxH,
+              0.5f, 0.5f, 0.5f, 0.5f, bgCol);
+
+    // Border line
+    float borderCol[4] = {0.25f, 0.28f, 0.35f, 0.80f};
+    push_quad(ctx, &ctx->whiteTex,
+              boxX, boxY,
+              boxX + boxW, boxY,
+              boxX + boxW, boxY + 1.f,
+              boxX, boxY + 1.f,
+              0.5f, 0.5f, 0.5f, 0.5f, borderCol);
+
+    float curX = boxX + 4.f;
+    float curY = boxY + 3.f;
+    for (int i = 0; i < textLen; i++) {
+        char ch = buf[i];
+        const uint8_t *glyph = NULL;
+        if (ch >= '0' && ch <= '9') {
+            static const uint8_t nums[10][7] = {
+                {0x0E,0x11,0x13,0x15,0x19,0x11,0x0E},
+                {0x04,0x0C,0x04,0x04,0x04,0x04,0x0E},
+                {0x0E,0x11,0x01,0x02,0x04,0x08,0x1F},
+                {0x1E,0x01,0x01,0x0E,0x01,0x01,0x1E},
+                {0x02,0x06,0x0A,0x12,0x1F,0x02,0x02},
+                {0x1F,0x10,0x10,0x1E,0x01,0x01,0x1E},
+                {0x0E,0x10,0x10,0x1E,0x11,0x11,0x0E},
+                {0x1F,0x01,0x02,0x04,0x08,0x08,0x08},
+                {0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E},
+                {0x0E,0x11,0x11,0x0F,0x01,0x01,0x0E}
+            };
+            glyph = nums[ch - '0'];
+        } else if (ch == '.') {
+            static const uint8_t dot[7] = {0, 0, 0, 0, 0, 0x0C, 0x0C};
+            glyph = dot;
+        } else if (ch == 'F') {
+            static const uint8_t gF[7] = {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10};
+            glyph = gF;
+        } else if (ch == 'P') {
+            static const uint8_t gP[7] = {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10};
+            glyph = gP;
+        } else if (ch == 'S') {
+            static const uint8_t gS[7] = {0x0E, 0x11, 0x10, 0x0E, 0x01, 0x11, 0x0E};
+            glyph = gS;
+        }
+
+        if (glyph) {
+            for (int r = 0; r < 7; r++) {
+                uint8_t rowBits = glyph[r];
+                for (int c = 0; c < 5; c++) {
+                    if (rowBits & (1u << (4 - c))) {
+                        float px = curX + (float)c;
+                        float py = curY + (float)r;
+                        push_quad(ctx, &ctx->whiteTex,
+                                  px, py,
+                                  px + 1.f, py,
+                                  px + 1.f, py + 1.f,
+                                  px, py + 1.f,
+                                  0.5f, 0.5f, 0.5f, 0.5f, textCol);
+                    }
+                }
+            }
+        }
+        curX += 6.f;
+    }
+    flush_batch(ctx);
+}
+
 static void ctr_end_frame(Renderer *ren) {
     CtrRenderer *ctx = (CtrRenderer *)ren;
     flush_batch(ctx);
@@ -2226,6 +2341,10 @@ static void ctr_end_frame(Renderer *ren) {
                       (float)drawX,           (float)(drawY + drawH),
                       0.f, v1, u1, v0, white);
             flush_batch(ctx);
+
+            if (g_ctr_show_fps) {
+                draw_fps_overlay(ctx, primaryW, primaryH);
+            }
 
             ctx->winW = savedWinW;
             ctx->winH = savedWinH;

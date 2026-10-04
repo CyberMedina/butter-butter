@@ -269,3 +269,8 @@ void CtrRenderer_setLetterboxTheme(float topR, float topG, float topB,
 
 C3D_RenderTarget *CtrRenderer_getTopTarget(Renderer *ren);
 C3D_RenderTarget *CtrRenderer_getBottomTarget(Renderer *ren);
+
+void CtrRenderer_setFpsOverlay(bool enable);
+bool CtrRenderer_getFpsOverlay(void);
+void CtrRenderer_toggleFpsOverlay(void);
+
