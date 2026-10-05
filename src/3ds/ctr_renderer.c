@@ -1195,6 +1195,7 @@ static bool cache_item_available(CtrRenderer *ctx, uint32_t id);
 // garbage (UNDERTALE undynebridge / DELTARUNE cooking minigame). Use this
 // helper instead of calling C3D_FrameSplit(0) directly.
 static void ctr_safe_frame_split(CtrRenderer *ctx) {
+    if (ctx->batchStart == 0 && ctx->vbufHead == 0) return;
     C3D_FrameSplit(0);
     if (ctx->inFrame && ctx->activeTarget) {
         rebind_state(ctx);

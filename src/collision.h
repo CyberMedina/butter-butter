@@ -17,11 +17,6 @@ static inline bool Collision_matchesTarget(DataWin* dataWin, Instance* inst, int
     return VM_isObjectOrDescendant(dataWin, inst->objectIndex, target);
 }
 
-typedef struct {
-    GMLReal left, right, top, bottom;
-    bool valid;
-} InstanceBBox;
-
 // Returns the collision sprite for an instance (mask sprite if set, else display sprite)
 static inline Sprite* Collision_getSprite(DataWin* dataWin, Instance* inst) {
     int32_t sprIdx = (inst->maskIndex >= 0) ? inst->maskIndex : inst->spriteIndex;
@@ -31,8 +26,24 @@ static inline Sprite* Collision_getSprite(DataWin* dataWin, Instance* inst) {
 
 // Computes the axis-aligned bounding box for an instance using its collision sprite
 static inline InstanceBBox Collision_computeBBox(DataWin* dataWin, Instance* inst) {
+    if (inst == nullptr) return (InstanceBBox){0, 0, 0, 0, false};
+    if (inst->cachedBBox.valid &&
+        inst->x == inst->cachedBBoxX &&
+        inst->y == inst->cachedBBoxY &&
+        inst->imageXscale == inst->cachedBBoxXscale &&
+        inst->imageYscale == inst->cachedBBoxYscale &&
+        inst->imageAngle == inst->cachedBBoxAngle &&
+        inst->spriteIndex == inst->cachedBBoxSprite &&
+        inst->maskIndex == inst->cachedBBoxMask) {
+        return inst->cachedBBox;
+    }
+
     Sprite* spr = Collision_getSprite(dataWin, inst);
-    if (spr == nullptr) return (InstanceBBox){0, 0, 0, 0, false};
+    if (spr == nullptr) {
+        InstanceBBox empty = (InstanceBBox){0, 0, 0, 0, false};
+        inst->cachedBBox = empty;
+        return empty;
+    }
 
     GMLReal marginL = (GMLReal) spr->marginLeft;
     GMLReal marginR = (GMLReal) (spr->marginRight + 1);
@@ -41,11 +52,12 @@ static inline InstanceBBox Collision_computeBBox(DataWin* dataWin, Instance* ins
     GMLReal originX = (GMLReal) spr->originX;
     GMLReal originY = (GMLReal) spr->originY;
 
+    InstanceBBox bbox;
     if (GMLReal_fabs(inst->imageAngle) > 0.0001) {
-        // Compute rotated AABB: transform the 4 corners of the unrotated bbox
-        GMLReal rad = inst->imageAngle * M_PI / 180.0;
-        GMLReal cs = GMLReal_cos(rad);
-        GMLReal sn = GMLReal_sin(rad);
+        // Fast float sin/cos
+        float rad = (float)(inst->imageAngle * (M_PI / 180.0));
+        GMLReal cs = (GMLReal)cosf(rad);
+        GMLReal sn = (GMLReal)sinf(rad);
 
         // Local-space corners relative to origin, scaled
         GMLReal lx0 = inst->imageXscale * (marginL - originX);
@@ -68,26 +80,35 @@ static inline InstanceBBox Collision_computeBBox(DataWin* dataWin, Instance* ins
             if (cy[c] > maxY) maxY = cy[c];
         }
 
-        return (InstanceBBox){
+        bbox = (InstanceBBox){
             .left   = inst->x + minX,
             .right  = inst->x + maxX,
             .top    = inst->y + minY,
             .bottom = inst->y + maxY,
             .valid  = true
         };
+    } else {
+        GMLReal left   = inst->x + inst->imageXscale * (marginL - originX);
+        GMLReal right  = inst->x + inst->imageXscale * (marginR - originX);
+        GMLReal top    = inst->y + inst->imageYscale * (marginT - originY);
+        GMLReal bottom = inst->y + inst->imageYscale * (marginB - originY);
+
+        // Normalize if negative scale
+        if (left > right) { GMLReal tmp = left; left = right; right = tmp; }
+        if (top > bottom) { GMLReal tmp = top; top = bottom; bottom = tmp; }
+
+        bbox = (InstanceBBox){left, right, top, bottom, true};
     }
 
-    // No rotation fast path
-    GMLReal left   = inst->x + inst->imageXscale * (marginL - originX);
-    GMLReal right  = inst->x + inst->imageXscale * (marginR - originX);
-    GMLReal top    = inst->y + inst->imageYscale * (marginT - originY);
-    GMLReal bottom = inst->y + inst->imageYscale * (marginB - originY);
-
-    // Normalize if negative scale
-    if (left > right) { GMLReal tmp = left; left = right; right = tmp; }
-    if (top > bottom) { GMLReal tmp = top; top = bottom; bottom = tmp; }
-
-    return (InstanceBBox){left, right, top, bottom, true};
+    inst->cachedBBox = bbox;
+    inst->cachedBBoxX = inst->x;
+    inst->cachedBBoxY = inst->y;
+    inst->cachedBBoxXscale = inst->imageXscale;
+    inst->cachedBBoxYscale = inst->imageYscale;
+    inst->cachedBBoxAngle = inst->imageAngle;
+    inst->cachedBBoxSprite = inst->spriteIndex;
+    inst->cachedBBoxMask = inst->maskIndex;
+    return bbox;
 }
 
 static inline bool Collision_hasFrameMasks(Sprite* sprite) {
@@ -122,9 +143,9 @@ static inline InstanceOBB Collision_instanceOBB(Sprite* spr, Instance* inst) {
     if (obb.ly0 > obb.ly1) { GMLReal t = obb.ly0; obb.ly0 = obb.ly1; obb.ly1 = t; }
     obb.rotated = GMLReal_fabs(inst->imageAngle) > 0.0001;
     if (obb.rotated) {
-        GMLReal rad = inst->imageAngle * M_PI / 180.0;
-        obb.cs = GMLReal_cos(rad);
-        obb.sn = GMLReal_sin(rad);
+        float rad = (float)(inst->imageAngle * (M_PI / 180.0));
+        obb.cs = (GMLReal)cosf(rad);
+        obb.sn = (GMLReal)sinf(rad);
     } else {
         obb.cs = 1.0;
         obb.sn = 0.0;
@@ -384,8 +405,6 @@ static inline bool Collision_instancesOverlapPrecise(DataWin* dataWin, bool comp
     }
 
     // Pixel scan over the AABB intersection.
-    // Modern: floor..ceil with exclusive upper bound, sample pixel centers (+0.5).
-    // Compatibility: truncated int range with inclusive upper bound, sample pixel corners (no +0.5).
     int32_t startX, endX, startY, endY;
     GMLReal sampleOffset;
     if (compatMode) {
@@ -402,13 +421,88 @@ static inline bool Collision_instancesOverlapPrecise(DataWin* dataWin, bool comp
         sampleOffset = 0.5;
     }
 
-    for (int32_t py = startY; (compatMode ? py <= endY : py < endY); py++) {
-        for (int32_t px = startX; (compatMode ? px <= endX : px < endX); px++) {
-            GMLReal wpx = (GMLReal) px + sampleOffset;
-            GMLReal wpy = (GMLReal) py + sampleOffset;
+    if (0.0001 > GMLReal_fabs(a->imageXscale) || 0.0001 > GMLReal_fabs(a->imageYscale)) return false;
+    if (0.0001 > GMLReal_fabs(b->imageXscale) || 0.0001 > GMLReal_fabs(b->imageYscale)) return false;
 
-            if (!Collision_pointInInstance(sprA, a, wpx, wpy)) continue;
-            if (!Collision_pointInInstance(sprB, b, wpx, wpy)) continue;
+    float invScaleXA = 1.0f / (float)a->imageXscale;
+    float invScaleYA = 1.0f / (float)a->imageYscale;
+    float invScaleXB = 1.0f / (float)b->imageXscale;
+    float invScaleYB = 1.0f / (float)b->imageYscale;
+
+    float originXA = (float)sprA->originX;
+    float originYA = (float)sprA->originY;
+    float originXB = (float)sprB->originX;
+    float originYB = (float)sprB->originY;
+
+    bool rotA = GMLReal_fabs(a->imageAngle) > 0.0001;
+    float csA = 1.0f, snA = 0.0f;
+    if (rotA) {
+        float radA = (float)(a->imageAngle * (M_PI / 180.0));
+        csA = cosf(radA);
+        snA = sinf(radA);
+    }
+
+    bool rotB = GMLReal_fabs(b->imageAngle) > 0.0001;
+    float csB = 1.0f, snB = 0.0f;
+    if (rotB) {
+        float radB = (float)(b->imageAngle * (M_PI / 180.0));
+        csB = cosf(radB);
+        snB = sinf(radB);
+    }
+
+    uint8_t* maskA = nullptr;
+    uint32_t bytesPerRowA = 0;
+    if (preciseA) {
+        uint32_t frameIdx = ((uint32_t) a->imageIndex) % sprA->maskCount;
+        maskA = sprA->masks[frameIdx];
+        bytesPerRowA = (sprA->width + 7) / 8;
+    }
+
+    uint8_t* maskB = nullptr;
+    uint32_t bytesPerRowB = 0;
+    if (preciseB) {
+        uint32_t frameIdx = ((uint32_t) b->imageIndex) % sprB->maskCount;
+        maskB = sprB->masks[frameIdx];
+        bytesPerRowB = (sprB->width + 7) / 8;
+    }
+
+    float ax = (float)a->x, ay = (float)a->y;
+    float bx = (float)b->x, by = (float)b->y;
+    uint32_t widthA = sprA->width, heightA = sprA->height;
+    uint32_t widthB = sprB->width, heightB = sprB->height;
+
+    for (int32_t py = startY; (compatMode ? py <= endY : py < endY); py++) {
+        float wpy = (float) py + (float) sampleOffset;
+        float dya = wpy - ay;
+        float dyb = wpy - by;
+
+        for (int32_t px = startX; (compatMode ? px <= endX : px < endX); px++) {
+            float wpx = (float) px + (float) sampleOffset;
+            float dxa = wpx - ax;
+
+            // Test instance A
+            float rxa = dxa, rya = dya;
+            if (rotA) {
+                rxa = csA * dxa - snA * dya;
+                rya = snA * dxa + csA * dya;
+            }
+            int32_t ixa = (int32_t)(rxa * invScaleXA + originXA);
+            int32_t iya = (int32_t)(rya * invScaleYA + originYA);
+            if ((uint32_t)ixa >= widthA || (uint32_t)iya >= heightA) continue;
+            if (maskA != nullptr && !(maskA[iya * bytesPerRowA + (ixa >> 3)] & (1 << (7 - (ixa & 7))))) continue;
+
+            // Test instance B
+            float dxb = wpx - bx;
+            float rxb = dxb, ryb = dyb;
+            if (rotB) {
+                rxb = csB * dxb - snB * dyb;
+                ryb = snB * dxb + csB * dyb;
+            }
+            int32_t ixb = (int32_t)(rxb * invScaleXB + originXB);
+            int32_t iyb = (int32_t)(ryb * invScaleYB + originYB);
+            if ((uint32_t)ixb >= widthB || (uint32_t)iyb >= heightB) continue;
+            if (maskB != nullptr && !(maskB[iyb * bytesPerRowB + (ixb >> 3)] & (1 << (7 - (ixb & 7))))) continue;
+
             return true;
         }
     }
