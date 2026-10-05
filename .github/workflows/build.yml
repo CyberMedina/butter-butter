@@ -352,7 +352,13 @@ jobs:
       - name: Build 3DSX and CIA (Butterscotch & Deltarune)
         run: |
           export PATH="/opt/devkitpro/tools/bin:$PATH"
-          cmake --build build-3ds --target butterscotch_3dsx
+          if ! cmake --build build-3ds --target butterscotch_3dsx 2>&1 | tee /tmp/build_3ds.log; then
+            echo "### 3DS Build Log (Failure)" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 80 /tmp/build_3ds.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
           cmake --build build-3ds --target butterscotch_cia
 
           # Build standalone DELTARUNE CIA (direct boot to chapter selection)

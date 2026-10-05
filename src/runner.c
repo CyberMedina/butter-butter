@@ -889,22 +889,9 @@ void Runner_draw(Runner* runner) {
             if (parsedLayer->type == RoomLayerType_Assets) {
                 RoomLayerAssetsData* data = parsedLayer->assetsData;
                 size_t tileElementCount = arrlenu(runtimeLayer->elements);
-                float vL = 0.0f, vT = 0.0f, vR = 0.0f, vB = 0.0f;
-                Runner_getCurrentViewBounds(runner, &vL, &vT, &vR, &vB);
-                bool hasView = (vR > vL && vB > vT);
                 repeat(data->legacyTileCount, j) {
                     if (runner->renderer != nullptr) {
                         RoomTile* tile = &data->legacyTiles[j];
-                        if (hasView) {
-                            float tX0 = (float)tile->x + layerOffsetX;
-                            float tY0 = (float)tile->y + layerOffsetY;
-                            float tW = (float)tile->width * fabsf(tile->scaleX);
-                            float tH = (float)tile->height * fabsf(tile->scaleY);
-                            if (tX0 + tW < vL - 32.0f || tX0 > vR + 32.0f ||
-                                tY0 + tH < vT - 32.0f || tY0 > vB + 32.0f) {
-                                continue;
-                            }
-                        }
                         RuntimeLayerElement* tileEl = nullptr;
                         if (runner->gameProfile == GAME_PROFILE_DELTARUNE) {
                             size_t expectedIdx = (size_t)data->spriteCount + (size_t)j;

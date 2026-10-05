@@ -2362,7 +2362,7 @@ static void ctr_end_frame(Renderer *ren) {
                       0.f, v1, u1, v0, white);
             flush_batch(ctx);
 
-            if (g_ctr_show_fps) {
+            if (g_ctr_overlay_mode != CTR_OVERLAY_OFF) {
                 draw_fps_overlay(ctx, primaryW, primaryH);
             }
 
