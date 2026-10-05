@@ -241,6 +241,7 @@ bool launcher_gfx_init_borrowed(LauncherGfx *gfx,
                                 C3D_RenderTarget *topTarget, int topW, int topH,
                                 C3D_RenderTarget *bottomTarget, int bottomW, int bottomH);
 void launcher_gfx_destroy(LauncherGfx *gfx);
+const uint8_t *launcher_glyph(char ch);
 
 // ---- Game-list helpers ------------------------------------------------------
 

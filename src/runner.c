@@ -587,13 +587,13 @@ void Runner_drawTileLayerEx(Runner* runner, RoomLayerTilesData* data, float laye
     int32_t startY = 0;
     int32_t endX = (int32_t) data->tilesX;
     int32_t endY = (int32_t) data->tilesY;
-    if (runner->gameProfile != GAME_PROFILE_DELTARUNE) {
-        float viewLeft, viewTop, viewRight, viewBottom;
-        Runner_getCurrentViewBounds(runner, &viewLeft, &viewTop, &viewRight, &viewBottom);
-        startX = (int32_t) floorf((viewLeft - layerOffsetX) / (float) tileW) - 1;
-        startY = (int32_t) floorf((viewTop - layerOffsetY) / (float) tileH) - 1;
-        endX = (int32_t) ceilf((viewRight - layerOffsetX) / (float) tileW) + 1;
-        endY = (int32_t) ceilf((viewBottom - layerOffsetY) / (float) tileH) + 1;
+    float viewLeft = 0.0f, viewTop = 0.0f, viewRight = 0.0f, viewBottom = 0.0f;
+    Runner_getCurrentViewBounds(runner, &viewLeft, &viewTop, &viewRight, &viewBottom);
+    if (viewRight > viewLeft && viewBottom > viewTop) {
+        startX = (int32_t) floorf((viewLeft - layerOffsetX) / (float) tileW) - 2;
+        startY = (int32_t) floorf((viewTop - layerOffsetY) / (float) tileH) - 2;
+        endX = (int32_t) ceilf((viewRight - layerOffsetX) / (float) tileW) + 2;
+        endY = (int32_t) ceilf((viewBottom - layerOffsetY) / (float) tileH) + 2;
         if (startX < 0) startX = 0;
         if (startY < 0) startY = 0;
         if (endX > (int32_t) data->tilesX) endX = (int32_t) data->tilesX;
@@ -889,9 +889,22 @@ void Runner_draw(Runner* runner) {
             if (parsedLayer->type == RoomLayerType_Assets) {
                 RoomLayerAssetsData* data = parsedLayer->assetsData;
                 size_t tileElementCount = arrlenu(runtimeLayer->elements);
+                float vL = 0.0f, vT = 0.0f, vR = 0.0f, vB = 0.0f;
+                Runner_getCurrentViewBounds(runner, &vL, &vT, &vR, &vB);
+                bool hasView = (vR > vL && vB > vT);
                 repeat(data->legacyTileCount, j) {
                     if (runner->renderer != nullptr) {
                         RoomTile* tile = &data->legacyTiles[j];
+                        if (hasView) {
+                            float tX0 = (float)tile->x + layerOffsetX;
+                            float tY0 = (float)tile->y + layerOffsetY;
+                            float tW = (float)tile->width * fabsf(tile->scaleX);
+                            float tH = (float)tile->height * fabsf(tile->scaleY);
+                            if (tX0 + tW < vL - 32.0f || tX0 > vR + 32.0f ||
+                                tY0 + tH < vT - 32.0f || tY0 > vB + 32.0f) {
+                                continue;
+                            }
+                        }
                         RuntimeLayerElement* tileEl = nullptr;
                         if (runner->gameProfile == GAME_PROFILE_DELTARUNE) {
                             size_t expectedIdx = (size_t)data->spriteCount + (size_t)j;

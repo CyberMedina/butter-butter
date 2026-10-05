@@ -14,6 +14,7 @@
 #include "stb_image.h"
 #include "image_decoder.h"
 #include "ctr_texture_cache.h"
+#include "launcher.h"
 #include "utils.h"
 
 #include "render2d_shader_shbin.h"
@@ -115,11 +116,37 @@ void CtrRenderer_setAppFilterMode(CtrAppFilterMode mode) {
 
 CtrAppFilterMode CtrRenderer_getAppFilterMode(void) { return g_ctr_app_filter_mode; }
 
-static bool g_ctr_show_fps = true;
+static CtrOverlayMode g_ctr_overlay_mode = CTR_OVERLAY_FPS_ONLY;
 
-void CtrRenderer_setFpsOverlay(bool enable) { g_ctr_show_fps = enable; }
-bool CtrRenderer_getFpsOverlay(void) { return g_ctr_show_fps; }
-void CtrRenderer_toggleFpsOverlay(void) { g_ctr_show_fps = !g_ctr_show_fps; }
+void CtrRenderer_setOverlayMode(CtrOverlayMode mode) {
+    if ((int)mode < 0 || (int)mode >= CTR_OVERLAY_COUNT) mode = CTR_OVERLAY_FPS_ONLY;
+    g_ctr_overlay_mode = mode;
+}
+
+CtrOverlayMode CtrRenderer_getOverlayMode(void) {
+    return g_ctr_overlay_mode;
+}
+
+void CtrRenderer_cycleOverlayMode(void) {
+    g_ctr_overlay_mode = (CtrOverlayMode)((g_ctr_overlay_mode + 1) % CTR_OVERLAY_COUNT);
+}
+
+static float s_perfStepMs = 0.0f;
+static float s_perfDrawMs = 0.0f;
+static int s_perfInstCount = 0;
+static char s_perfRoomName[48] = {0};
+
+void CtrRenderer_updatePerfStats(float stepMs, float drawMs, int instCount, const char *roomName) {
+    s_perfStepMs = stepMs;
+    s_perfDrawMs = drawMs;
+    s_perfInstCount = instCount;
+    if (roomName) {
+        snprintf(s_perfRoomName, sizeof(s_perfRoomName), "%s", roomName);
+    } else {
+        s_perfRoomName[0] = '\0';
+    }
+}
+
 
 
 static void apply_app_filter(CtrRenderer *ctx) {
@@ -2146,11 +2173,42 @@ static void ctr_begin_frame(Renderer *ren, int32_t gw, int32_t gh, int32_t ww, i
     ctx->surfaceDrawSuppressedDepth = 0;
 }
 
+static void draw_text_5x7(CtrRenderer *ctx, const char *str, float x, float y, const float col[4]) {
+    float curX = x;
+    for (const char *p = str; p && *p; p++) {
+        char ch = *p;
+        if (ch == ' ') {
+            curX += 4.f;
+            continue;
+        }
+        const uint8_t *glyph = launcher_glyph(ch);
+        if (glyph) {
+            for (int r = 0; r < 7; r++) {
+                uint8_t rowBits = glyph[r];
+                for (int c = 0; c < 5; c++) {
+                    if (rowBits & (1u << (4 - c))) {
+                        float px = curX + (float)c;
+                        float py = y + (float)r;
+                        push_quad(ctx, &ctx->whiteTex,
+                                  px, py,
+                                  px + 1.f, py,
+                                  px + 1.f, py + 1.f,
+                                  px, py + 1.f,
+                                  0.5f, 0.5f, 0.5f, 0.5f, col);
+                    }
+                }
+            }
+        }
+        curX += 6.f;
+    }
+}
+
 static u64 s_fpsLastTime = 0;
 static int s_fpsFrameCounter = 0;
 static float s_fpsDisplayVal = 30.0f;
 
 static void draw_fps_overlay(CtrRenderer *ctx, int screenW, int screenH) {
+    if (g_ctr_overlay_mode == CTR_OVERLAY_OFF) return;
     (void)screenH;
     u64 now = osGetTime();
     s_fpsFrameCounter++;
@@ -2162,8 +2220,8 @@ static void draw_fps_overlay(CtrRenderer *ctx, int screenW, int screenH) {
         s_fpsLastTime = now;
     }
 
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%.1f FPS", s_fpsDisplayVal);
+    char fpsBuf[16];
+    snprintf(fpsBuf, sizeof(fpsBuf), "%.1f FPS", s_fpsDisplayVal);
 
     float textCol[4];
     if (s_fpsDisplayVal >= 28.0f) {
@@ -2174,82 +2232,44 @@ static void draw_fps_overlay(CtrRenderer *ctx, int screenW, int screenH) {
         textCol[0] = 1.00f; textCol[1] = 0.30f; textCol[2] = 0.30f; textCol[3] = 1.0f;
     }
 
-    int textLen = (int)strlen(buf);
-    float textW = (float)(textLen * 6);
-    float boxW = textW + 8.f;
-    float boxH = 13.f;
-    float boxX = (float)screenW - boxW - 5.f;
-    float boxY = 5.f;
+    if (g_ctr_overlay_mode == CTR_OVERLAY_FPS_ONLY) {
+        float boxW = 56.f;
+        float boxH = 13.f;
+        float boxX = (float)screenW - boxW - 5.f;
+        float boxY = 5.f;
 
-    // Semi-transparent dark background pill
-    float bgCol[4] = {0.04f, 0.05f, 0.08f, 0.80f};
-    push_quad(ctx, &ctx->whiteTex,
-              boxX, boxY,
-              boxX + boxW, boxY,
-              boxX + boxW, boxY + boxH,
-              boxX, boxY + boxH,
-              0.5f, 0.5f, 0.5f, 0.5f, bgCol);
+        float bgCol[4] = {0.04f, 0.05f, 0.08f, 0.80f};
+        push_quad(ctx, &ctx->whiteTex, boxX, boxY, boxX + boxW, boxY, boxX + boxW, boxY + boxH, boxX, boxY + boxH, 0.5f, 0.5f, 0.5f, 0.5f, bgCol);
+        float borderCol[4] = {0.25f, 0.28f, 0.35f, 0.80f};
+        push_quad(ctx, &ctx->whiteTex, boxX, boxY, boxX + boxW, boxY, boxX + boxW, boxY + 1.f, boxX, boxY + 1.f, 0.5f, 0.5f, 0.5f, 0.5f, borderCol);
 
-    // Border line
-    float borderCol[4] = {0.25f, 0.28f, 0.35f, 0.80f};
-    push_quad(ctx, &ctx->whiteTex,
-              boxX, boxY,
-              boxX + boxW, boxY,
-              boxX + boxW, boxY + 1.f,
-              boxX, boxY + 1.f,
-              0.5f, 0.5f, 0.5f, 0.5f, borderCol);
+        draw_text_5x7(ctx, fpsBuf, boxX + 4.f, boxY + 3.f, textCol);
+    } else if (g_ctr_overlay_mode == CTR_OVERLAY_DETAILED) {
+        char line2[64];
+        snprintf(line2, sizeof(line2), "STEP:%.1fMS DRAW:%.1fMS", s_perfStepMs, s_perfDrawMs);
+        char line3[64];
+        struct mallinfo mi = mallinfo();
+        snprintf(line3, sizeof(line3), "INST:%d  MEM:%.1fMB", s_perfInstCount, (float)mi.uordblks / (1024.f * 1024.f));
 
-    float curX = boxX + 4.f;
-    float curY = boxY + 3.f;
-    for (int i = 0; i < textLen; i++) {
-        char ch = buf[i];
-        const uint8_t *glyph = NULL;
-        if (ch >= '0' && ch <= '9') {
-            static const uint8_t nums[10][7] = {
-                {0x0E,0x11,0x13,0x15,0x19,0x11,0x0E},
-                {0x04,0x0C,0x04,0x04,0x04,0x04,0x0E},
-                {0x0E,0x11,0x01,0x02,0x04,0x08,0x1F},
-                {0x1E,0x01,0x01,0x0E,0x01,0x01,0x1E},
-                {0x02,0x06,0x0A,0x12,0x1F,0x02,0x02},
-                {0x1F,0x10,0x10,0x1E,0x01,0x01,0x1E},
-                {0x0E,0x10,0x10,0x1E,0x11,0x11,0x0E},
-                {0x1F,0x01,0x02,0x04,0x08,0x08,0x08},
-                {0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E},
-                {0x0E,0x11,0x11,0x0F,0x01,0x01,0x0E}
-            };
-            glyph = nums[ch - '0'];
-        } else if (ch == '.') {
-            static const uint8_t dot[7] = {0, 0, 0, 0, 0, 0x0C, 0x0C};
-            glyph = dot;
-        } else if (ch == 'F') {
-            static const uint8_t gF[7] = {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10};
-            glyph = gF;
-        } else if (ch == 'P') {
-            static const uint8_t gP[7] = {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10};
-            glyph = gP;
-        } else if (ch == 'S') {
-            static const uint8_t gS[7] = {0x0E, 0x11, 0x10, 0x0E, 0x01, 0x11, 0x0E};
-            glyph = gS;
+        float whiteCol[4] = {0.85f, 0.88f, 0.95f, 0.95f};
+        float subCol[4] = {0.65f, 0.70f, 0.80f, 0.90f};
+
+        float boxW = 195.f;
+        float boxH = 34.f;
+        float boxX = (float)screenW - boxW - 5.f;
+        float boxY = 5.f;
+
+        float bgCol[4] = {0.03f, 0.04f, 0.07f, 0.88f};
+        push_quad(ctx, &ctx->whiteTex, boxX, boxY, boxX + boxW, boxY, boxX + boxW, boxY + boxH, boxX, boxY + boxH, 0.5f, 0.5f, 0.5f, 0.5f, bgCol);
+        float borderCol[4] = {0.30f, 0.35f, 0.45f, 0.85f};
+        push_quad(ctx, &ctx->whiteTex, boxX, boxY, boxX + boxW, boxY, boxX + boxW, boxY + 1.f, boxX, boxY + 1.f, 0.5f, 0.5f, 0.5f, 0.5f, borderCol);
+
+        draw_text_5x7(ctx, fpsBuf, boxX + 4.f, boxY + 3.f, textCol);
+        if (s_perfRoomName[0]) {
+            draw_text_5x7(ctx, s_perfRoomName, boxX + 56.f, boxY + 3.f, whiteCol);
         }
-
-        if (glyph) {
-            for (int r = 0; r < 7; r++) {
-                uint8_t rowBits = glyph[r];
-                for (int c = 0; c < 5; c++) {
-                    if (rowBits & (1u << (4 - c))) {
-                        float px = curX + (float)c;
-                        float py = curY + (float)r;
-                        push_quad(ctx, &ctx->whiteTex,
-                                  px, py,
-                                  px + 1.f, py,
-                                  px + 1.f, py + 1.f,
-                                  px, py + 1.f,
-                                  0.5f, 0.5f, 0.5f, 0.5f, textCol);
-                    }
-                }
-            }
-        }
-        curX += 6.f;
+        draw_text_5x7(ctx, line2, boxX + 4.f, boxY + 13.f, subCol);
+        draw_text_5x7(ctx, line3, boxX + 4.f, boxY + 23.f, subCol);
     }
     flush_batch(ctx);
 }

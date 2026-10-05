@@ -19,6 +19,7 @@
 #include "sdl12_audio_system.h"
 #include "render2d_shader_shbin.h"
 #include "launcher.h"
+#include "stb_ds.h"
 
 //u32 __ctru_heap_size        = 35 * 1024 * 1024;
 u32 __ctru_linear_heap_size = 48 * 1024 * 1024;
@@ -99,26 +100,34 @@ static void printMemoryStats(void) {
 // Per-second FPS + memory snapshot, written to sdmc:/3ds/butter_out.txt via the
 // stdout redirect set up in setup_logging(). We accumulate frame count between
 // stamps instead of computing instantaneous FPS so the number is stable.
-static void logPerfSample(int *frames, u64 *windowStart) {
-#if CTR_OPT_DIAGNOSTICS
+static void logPerfSample(int *frames, u64 *windowStart, float stepMs, float drawMs, int instCount, const char *roomName) {
     (*frames)++;
+    static float s_accumStep = 0.f;
+    static float s_accumDraw = 0.f;
+    s_accumStep += stepMs;
+    s_accumDraw += drawMs;
+
     u64 now = osGetTime();
     u64 elapsed = now - *windowStart;
     if (elapsed >= 1000) {
         float fps = (float)(*frames) * 1000.0f / (float)elapsed;
+        float avgStep = (*frames > 0) ? (s_accumStep / (float)(*frames)) : 0.0f;
+        float avgDraw = (*frames > 0) ? (s_accumDraw / (float)(*frames)) : 0.0f;
         struct mallinfo mi = mallinfo();
         u32 linearFree = linearSpaceFree();
-        printf("[PERF] FPS=%.1f  Heap=%.2fMB  LinearFree=%.2fMB\n",
+        printf("[PERF] Room: %-25s | FPS: %4.1f | Step: %4.1fms | Draw: %4.1fms | Inst: %4d | Heap: %.2fMB | LinFree: %.2fMB\n",
+               (roomName && roomName[0]) ? roomName : "unknown",
                fps,
+               avgStep,
+               avgDraw,
+               instCount,
                (float)mi.uordblks / 1024.0f / 1024.0f,
                (float)linearFree / 1024.0f / 1024.0f);
         *frames = 0;
+        s_accumStep = 0.f;
+        s_accumDraw = 0.f;
         *windowStart = now;
     }
-#else
-    (void)frames;
-    (void)windowStart;
-#endif
 }
 
 typedef struct {
@@ -603,7 +612,7 @@ int main(int argc, char **argv) {
             hidScanInput();
             u32 d = hidKeysDown(), u = hidKeysUp(), h = hidKeysHeld();
             if ((h & KEY_L) && (h & KEY_R) && (d & KEY_SELECT)) {
-                CtrRenderer_toggleFpsOverlay();
+                CtrRenderer_cycleOverlayMode();
                 continue;
             }
 
@@ -708,10 +717,13 @@ int main(int argc, char **argv) {
             }
             RunnerMouse_endFrame(run->mouse);
 
+            u64 t_step_start = osGetTime();
             Runner_step(run);
             if (run->audioSystem)
                 run->audioSystem->vtable->update(run->audioSystem, 1.f / 30.f);
+            float stepMs = (float)(osGetTime() - t_step_start);
 
+            u64 t_draw_start = osGetTime();
             int gw = dw->gen8.defaultWindowWidth;
             int gh = dw->gen8.defaultWindowHeight;
             bool views_en = run->viewsEnabled;
@@ -815,9 +827,15 @@ int main(int argc, char **argv) {
 
             run->viewCurrent = 0;
             ren->vtable->endFrame(ren);
+            float drawMs = (float)(osGetTime() - t_draw_start);
+
+            const char *curRoom = (run->currentRoom && run->currentRoom->name) ? run->currentRoom->name : "";
+            int instCount = (int)arrlen(run->instances);
+            CtrRenderer_updatePerfStats(stepMs, drawMs, instCount, curRoom);
+
             if (frameCounter % 600 == 0) printMemoryStats();
             frameCounter++;
-            logPerfSample(&perfFrameCount, &perfWindowStart);
+            logPerfSample(&perfFrameCount, &perfWindowStart, stepMs, drawMs, instCount, curRoom);
 
             u64 elapsedMs = osGetTime() - t_start;
             if (elapsedMs < 33) {

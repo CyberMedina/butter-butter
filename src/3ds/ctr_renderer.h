@@ -270,7 +270,16 @@ void CtrRenderer_setLetterboxTheme(float topR, float topG, float topB,
 C3D_RenderTarget *CtrRenderer_getTopTarget(Renderer *ren);
 C3D_RenderTarget *CtrRenderer_getBottomTarget(Renderer *ren);
 
-void CtrRenderer_setFpsOverlay(bool enable);
-bool CtrRenderer_getFpsOverlay(void);
-void CtrRenderer_toggleFpsOverlay(void);
+typedef enum {
+    CTR_OVERLAY_FPS_ONLY = 0,
+    CTR_OVERLAY_DETAILED = 1,
+    CTR_OVERLAY_OFF      = 2,
+    CTR_OVERLAY_COUNT    = 3
+} CtrOverlayMode;
+
+void           CtrRenderer_setOverlayMode(CtrOverlayMode mode);
+CtrOverlayMode CtrRenderer_getOverlayMode(void);
+void           CtrRenderer_cycleOverlayMode(void);
+void           CtrRenderer_updatePerfStats(float stepMs, float drawMs, int instCount, const char *roomName);
+
 

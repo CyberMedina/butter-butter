@@ -1324,7 +1324,7 @@ static void launcher_rect(LauncherGfx *gfx, float x, float y, float w, float h,
 // Pixel font
 // ---------------------------------------------------------------------------
 
-static const uint8_t *launcher_glyph(char ch) {
+const uint8_t *launcher_glyph(char ch) {
     static const uint8_t sp[7] = {0,0,0,0,0,0,0};
     static const uint8_t q[7]  = {0x0E,0x11,0x01,0x02,0x04,0x00,0x04};
     static const uint8_t A[7]  = {0x0E,0x11,0x11,0x1F,0x11,0x11,0x11};
