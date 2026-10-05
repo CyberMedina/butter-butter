@@ -4568,7 +4568,9 @@ static void ctr_clear_target(Renderer *ren, uint32_t color, float alpha) {
     uint32_t rgba = ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | aa;
     // Use the safe variant: a bare C3D_FrameSplit leaves BufInfo/AttrInfo stale,
     // and the next batched draw on this target then reads garbage vertices.
-    ctr_safe_frame_split(ctx);
+    if (ctx->batchStart > 0 || ctx->vbufHead > 0) {
+        ctr_safe_frame_split(ctx);
+    }
     C3D_RenderTargetClear(ctx->activeTarget, C3D_CLEAR_ALL, rgba, 0);
 }
 

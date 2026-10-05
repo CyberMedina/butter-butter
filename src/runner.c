@@ -794,11 +794,15 @@ void Runner_draw(Runner* runner) {
                 }
 
                 if (hasViewBounds) {
+                    float sx = fabsf(tile->scaleX) > 0.0f ? fabsf(tile->scaleX) : 1.0f;
+                    float sy = fabsf(tile->scaleY) > 0.0f ? fabsf(tile->scaleY) : 1.0f;
+                    float tW = (float) tile->width * sx;
+                    float tH = (float) tile->height * sy;
                     float tX = (float) tile->x + offsetX;
                     float tY = (float) tile->y + offsetY;
-                    float tW = (float) tile->width * (tile->scaleX > 0.0f ? tile->scaleX : 1.0f);
-                    float tH = (float) tile->height * (tile->scaleY > 0.0f ? tile->scaleY : 1.0f);
-                    if (tX + tW < viewL || tX > viewR || tY + tH < viewT || tY > viewB)
+                    float minX = (tile->scaleX < 0.0f) ? (tX - tW) : tX;
+                    float minY = (tile->scaleY < 0.0f) ? (tY - tH) : tY;
+                    if (minX + tW < viewL || minX > viewR || minY + tH < viewT || minY > viewB)
                         continue;
                 }
 
@@ -836,21 +840,31 @@ void Runner_draw(Runner* runner) {
             if (!inst->active || !inst->visible) continue;
             int32_t ownerObjectIndex = -1;
             int32_t codeId = findEventCodeIdAndOwner(runner, inst->objectIndex, EVENT_DRAW, DRAW_NORMAL, &ownerObjectIndex);
+
+            // View frustum culling: instances with a defined sprite can be culled when far outside the camera view.
+            // Controllers/managers without a sprite (spriteIndex < 0, e.g. obj_darkcontroller) are never culled.
+            if (hasViewBounds && inst->spriteIndex >= 0 && (uint32_t)inst->spriteIndex < runner->dataWin->sprt.count) {
+                Sprite* sp = &runner->dataWin->sprt.sprites[inst->spriteIndex];
+                float sx = fabsf((float)inst->imageXscale);
+                float sy = fabsf((float)inst->imageYscale);
+                float extentX = (float)sp->width * (sx > 0.0f ? sx : 1.0f);
+                float extentY = (float)sp->height * (sy > 0.0f ? sy : 1.0f);
+                if (extentX < 32.0f) extentX = 32.0f;
+                if (extentY < 32.0f) extentY = 32.0f;
+                // Generous margin: 96px for custom GML Draw events (traffic cars, npcs, sparks), 32px for default drawSelf
+                float margin = (codeId >= 0) ? 96.0f : 32.0f;
+                float boundL = (float)inst->x - extentX - margin;
+                float boundR = (float)inst->x + extentX + margin;
+                float boundT = (float)inst->y - extentY - margin;
+                float boundB = (float)inst->y + extentY + margin;
+                if (boundR < viewL || boundL > viewR || boundB < viewT || boundT > viewB) {
+                    continue;
+                }
+            }
+
             if (codeId >= 0) {
                 Runner_executeResolvedEvent(runner, inst, EVENT_DRAW, DRAW_NORMAL, codeId, ownerObjectIndex);
             } else if (runner->renderer != nullptr) {
-                if (hasViewBounds && inst->spriteIndex >= 0 && (uint32_t)inst->spriteIndex < runner->dataWin->sprt.count) {
-                    Sprite* sp = &runner->dataWin->sprt.sprites[inst->spriteIndex];
-                    float sx = fabsf((float)inst->imageXscale);
-                    float sy = fabsf((float)inst->imageYscale);
-                    float w = (float)sp->width * (sx > 0.0f ? sx : 1.0f);
-                    float h = (float)sp->height * (sy > 0.0f ? sy : 1.0f);
-                    float ix = (float)inst->x - (float)sp->originX * (float)inst->imageXscale;
-                    float iy = (float)inst->y - (float)sp->originY * (float)inst->imageYscale;
-                    if (ix + w < viewL - 32.0f || ix > viewR + 32.0f || iy + h < viewT - 32.0f || iy > viewB + 32.0f) {
-                        continue;
-                    }
-                }
                 Renderer_drawSelf(runner->renderer, inst);
             }
         } else if (d->type == DRAWABLE_LAYER)
@@ -917,6 +931,29 @@ void Runner_draw(Runner* runner) {
                 repeat(data->legacyTileCount, j) {
                     if (runner->renderer != nullptr) {
                         RoomTile* tile = &data->legacyTiles[j];
+
+                        // Skip tiles whose layer was hidden via tile_layer_hide()
+                        ptrdiff_t layerIdx = hmgeti(runner->tileLayerMap, tile->tileDepth);
+                        if (layerIdx >= 0 && !runner->tileLayerMap[layerIdx].value.visible) continue;
+                        float offsetX = 0.0f, offsetY = 0.0f;
+                        if (layerIdx >= 0) {
+                            offsetX = runner->tileLayerMap[layerIdx].value.offsetX;
+                            offsetY = runner->tileLayerMap[layerIdx].value.offsetY;
+                        }
+
+                        if (hasViewBounds) {
+                            float sx = fabsf(tile->scaleX) > 0.0f ? fabsf(tile->scaleX) : 1.0f;
+                            float sy = fabsf(tile->scaleY) > 0.0f ? fabsf(tile->scaleY) : 1.0f;
+                            float tW = (float) tile->width * sx;
+                            float tH = (float) tile->height * sy;
+                            float tX = (float) tile->x + offsetX;
+                            float tY = (float) tile->y + offsetY;
+                            float minX = (tile->scaleX < 0.0f) ? (tX - tW) : tX;
+                            float minY = (tile->scaleY < 0.0f) ? (tY - tH) : tY;
+                            if (minX + tW < viewL || minX > viewR || minY + tH < viewT || minY > viewB)
+                                continue;
+                        }
+
                         RuntimeLayerElement* tileEl = nullptr;
                         if (runner->gameProfile == GAME_PROFILE_DELTARUNE) {
                             size_t expectedIdx = (size_t)data->spriteCount + (size_t)j;
@@ -936,14 +973,6 @@ void Runner_draw(Runner* runner) {
                         }
                         if (tileEl != nullptr && !tileEl->visible) continue;
                         if (tileEl != nullptr && tileEl->alpha <= 0.0f) continue;
-                        // Check if this tile's layer is hidden via tile_layer_hide()
-                        ptrdiff_t layerIdx = hmgeti(runner->tileLayerMap, tile->tileDepth);
-                        if (layerIdx >= 0 && !runner->tileLayerMap[layerIdx].value.visible) continue;
-                        float offsetX = 0.0f, offsetY = 0.0f;
-                        if (layerIdx >= 0) {
-                            offsetX = runner->tileLayerMap[layerIdx].value.offsetX;
-                            offsetY = runner->tileLayerMap[layerIdx].value.offsetY;
-                        }
 
 #ifdef ENABLE_VM_TRACING
                         // Trace tile drawing if requested
@@ -995,6 +1024,23 @@ void Runner_draw(Runner* runner) {
                     if (el->type != RuntimeLayerElementType_Sprite || el->spriteElement == nullptr) continue;
                     RuntimeSpriteElement* spr = el->spriteElement;
                     if (0 > spr->spriteIndex) continue;
+
+                    if (hasViewBounds && (uint32_t)spr->spriteIndex < runner->dataWin->sprt.count) {
+                        Sprite* sp = &runner->dataWin->sprt.sprites[spr->spriteIndex];
+                        float sx = fabsf(spr->scaleX) > 0.0f ? fabsf(spr->scaleX) : 1.0f;
+                        float sy = fabsf(spr->scaleY) > 0.0f ? fabsf(spr->scaleY) : 1.0f;
+                        float extentX = (float)sp->width * sx;
+                        float extentY = (float)sp->height * sy;
+                        if (extentX < 32.0f) extentX = 32.0f;
+                        if (extentY < 32.0f) extentY = 32.0f;
+                        float posX = (float)spr->x + layerOffsetX;
+                        float posY = (float)spr->y + layerOffsetY;
+                        if (posX + extentX < viewL - 32.0f || posX - extentX > viewR + 32.0f ||
+                            posY + extentY < viewT - 32.0f || posY - extentY > viewB + 32.0f) {
+                            continue;
+                        }
+                    }
+
                     Renderer_drawSpriteExt(
                         runner->renderer, spr->spriteIndex, (int32_t) spr->frameIndex,
                         spr->x + layerOffsetX, spr->y + layerOffsetY, spr->scaleX,
