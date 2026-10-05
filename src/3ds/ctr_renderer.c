@@ -1997,6 +1997,7 @@ static void disable_scissor(CtrRenderer *ctx) {
 // Blend state
 
 static void apply_blend(CtrRenderer *ctx, int mode) {
+    if (ctx->blendEnabled && ctx->currentBlendMode == mode) return;
     flush_batch(ctx);
     ctx->currentBlendMode = mode;
     ctx->blendEnabled = true;
@@ -4786,18 +4787,26 @@ static void ctr_gpu_blend_mode(Renderer *ren, int32_t mode) {
 
 static void ctr_gpu_blend_mode_ext(Renderer *ren, int32_t sfactor, int32_t dfactor) {
     CtrRenderer *ctx = (CtrRenderer *)ren;
+    GPU_BLENDFACTOR s = gm_blend_factor_to_gpu(sfactor);
+    GPU_BLENDFACTOR d = gm_blend_factor_to_gpu(dfactor);
+    if (ctx->blendEnabled && ctx->currentBlendMode == bm_complex &&
+        ctx->blendSrcColor == s && ctx->blendDstColor == d &&
+        ctx->blendSrcAlpha == s && ctx->blendDstAlpha == d) {
+        return;
+    }
     flush_batch(ctx);
     ctx->currentBlendMode = bm_complex;
     ctx->blendEnabled = true;
-    ctx->blendSrcColor = gm_blend_factor_to_gpu(sfactor);
-    ctx->blendDstColor = gm_blend_factor_to_gpu(dfactor);
-    ctx->blendSrcAlpha = ctx->blendSrcColor;
-    ctx->blendDstAlpha = ctx->blendDstColor;
+    ctx->blendSrcColor = s;
+    ctx->blendDstColor = d;
+    ctx->blendSrcAlpha = s;
+    ctx->blendDstAlpha = d;
     emit_blend_state(ctx);
 }
 
 static void ctr_gpu_blend_enable(Renderer *ren, bool enable) {
     CtrRenderer *ctx = (CtrRenderer *)ren;
+    if (ctx->blendEnabled == enable) return;
     flush_batch(ctx);
     ctx->blendEnabled = enable;
     emit_blend_state(ctx);
@@ -4805,6 +4814,7 @@ static void ctr_gpu_blend_enable(Renderer *ren, bool enable) {
 
 static void ctr_gpu_alpha_test_enable(Renderer *ren, bool enable) {
     CtrRenderer *ctx = (CtrRenderer *)ren;
+    if (ctx->alphaTestEnabled == enable) return;
     flush_batch(ctx);
     ctx->alphaTestEnabled = enable;
     apply_alpha_test_state(ctx);
@@ -4812,6 +4822,7 @@ static void ctr_gpu_alpha_test_enable(Renderer *ren, bool enable) {
 
 static void ctr_gpu_alpha_test_ref(Renderer *ren, uint8_t ref) {
     CtrRenderer *ctx = (CtrRenderer *)ren;
+    if (ctx->alphaTestRef == ref) return;
     flush_batch(ctx);
     ctx->alphaTestRef = ref;
     apply_alpha_test_state(ctx);
@@ -4824,6 +4835,7 @@ static void ctr_gpu_color_write_enable(Renderer *ren, bool r, bool g, bool b, bo
     if (g) mask = (GPU_WRITEMASK)(mask | GPU_WRITE_GREEN);
     if (b) mask = (GPU_WRITEMASK)(mask | GPU_WRITE_BLUE);
     if (a) mask = (GPU_WRITEMASK)(mask | GPU_WRITE_ALPHA);
+    if (ctx->writeMask == mask) return;
     flush_batch(ctx);
     ctx->writeMask = mask;
     apply_depth_write_mask(ctx);

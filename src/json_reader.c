@@ -351,6 +351,11 @@ static JsonValue* parseValue(JsonParser* parser) {
 JsonValue* JsonReader_parse(const char* json) {
     if (json == nullptr) return nullptr;
 
+    // Skip UTF-8 BOM if present
+    if ((unsigned char)json[0] == 0xEF && (unsigned char)json[1] == 0xBB && (unsigned char)json[2] == 0xBF) {
+        json += 3;
+    }
+
     JsonParser parser = {
         .input = json,
         .position = 0,
@@ -451,6 +456,7 @@ const char* JsonReader_getString(const JsonValue* value) {
 // ===[ Array Access ]===
 
 int JsonReader_arrayLength(const JsonValue* value) {
+    if (value == nullptr || value->type != JSON_ARRAY) return 0;
     return value->array.count;
 }
 
@@ -480,6 +486,7 @@ void JsonReader_readInt32Array(const JsonValue* value, int32_t* out, int expecte
 // ===[ Object Access ]===
 
 int JsonReader_objectLength(const JsonValue* value) {
+    if (value == nullptr || value->type != JSON_OBJECT) return 0;
     return value->object.count;
 }
 

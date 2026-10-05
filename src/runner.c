@@ -774,6 +774,10 @@ void Runner_draw(Runner* runner) {
     fireDrawSubtype(runner, drawables, drawableCount, DRAW_PRE);
     fireDrawSubtype(runner, drawables, drawableCount, DRAW_BEGIN);
 
+    float viewL = 0.0f, viewT = 0.0f, viewR = 0.0f, viewB = 0.0f;
+    Runner_getCurrentViewBounds(runner, &viewL, &viewT, &viewR, &viewB);
+    bool hasViewBounds = (viewR > viewL && viewB > viewT);
+
     // Draw interleaved tiles and instances
     repeat(drawableCount, i) {
         Drawable* d = &drawables[i];
@@ -787,6 +791,15 @@ void Runner_draw(Runner* runner) {
                 if (layerIdx >= 0) {
                     offsetX = runner->tileLayerMap[layerIdx].value.offsetX;
                     offsetY = runner->tileLayerMap[layerIdx].value.offsetY;
+                }
+
+                if (hasViewBounds) {
+                    float tX = (float) tile->x + offsetX;
+                    float tY = (float) tile->y + offsetY;
+                    float tW = (float) tile->width * (tile->scaleX > 0.0f ? tile->scaleX : 1.0f);
+                    float tH = (float) tile->height * (tile->scaleY > 0.0f ? tile->scaleY : 1.0f);
+                    if (tX + tW < viewL || tX > viewR || tY + tH < viewT || tY > viewB)
+                        continue;
                 }
 
 #ifdef ENABLE_VM_TRACING
@@ -826,6 +839,18 @@ void Runner_draw(Runner* runner) {
             if (codeId >= 0) {
                 Runner_executeResolvedEvent(runner, inst, EVENT_DRAW, DRAW_NORMAL, codeId, ownerObjectIndex);
             } else if (runner->renderer != nullptr) {
+                if (hasViewBounds && inst->spriteIndex >= 0 && (uint32_t)inst->spriteIndex < runner->dataWin->sprt.count) {
+                    Sprite* sp = &runner->dataWin->sprt.sprites[inst->spriteIndex];
+                    float sx = fabsf((float)inst->imageXscale);
+                    float sy = fabsf((float)inst->imageYscale);
+                    float w = (float)sp->width * (sx > 0.0f ? sx : 1.0f);
+                    float h = (float)sp->height * (sy > 0.0f ? sy : 1.0f);
+                    float ix = (float)inst->x - (float)sp->originX * (float)inst->imageXscale;
+                    float iy = (float)inst->y - (float)sp->originY * (float)inst->imageYscale;
+                    if (ix + w < viewL - 32.0f || ix > viewR + 32.0f || iy + h < viewT - 32.0f || iy > viewB + 32.0f) {
+                        continue;
+                    }
+                }
                 Renderer_drawSelf(runner->renderer, inst);
             }
         } else if (d->type == DRAWABLE_LAYER)
